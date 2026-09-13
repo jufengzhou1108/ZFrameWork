@@ -1,6 +1,10 @@
 # Unity项目文件规则
 # Git LFS rules for Unity project
 
+# 行尾统一：仓库与工作区一律使用 LF（覆盖 core.autocrlf 的 CRLF 转换），
+# 避免同一文件在不同平台上被反复整篇改写而产生噪音 diff
+* text=auto eol=lf
+
 # Unity scripts & shaders, c-sharp
 *.cginc text
 *.cs diff=csharp
