@@ -44,14 +44,7 @@ namespace ZFrameWork
                 return false;
 
             if (_resourceGroup != null)
-            {
-                if (_resourceGroup.IsCooled)
-                {
-                    ZLog.LogError($"[{GetType().Name}] 管理器资源组已冷却，无法继续加载 UI。");
-                    return false;
-                }
                 return true;
-            }
 
             if (ResourceGroupFactory == null)
             {
@@ -63,11 +56,6 @@ namespace ZFrameWork
             if (_resourceGroup == null)
             {
                 ZLog.LogError($"[{GetType().Name}] 资源组工厂返回了空资源组。");
-                return false;
-            }
-            if (_resourceGroup.IsCooled)
-            {
-                ZLog.LogError($"[{GetType().Name}] 创建出的资源组处于冷却状态。");
                 return false;
             }
             return true;
@@ -91,7 +79,7 @@ namespace ZFrameWork
         /// <summary>释放管理器资源组持有的全部界面预制体引用。</summary>
         protected void ReleaseResourceGroup()
         {
-            _resourceGroup?.ReleaseAll(true);
+            _resourceGroup?.ReleaseAll();
             _resourceGroup = null;
         }
     }

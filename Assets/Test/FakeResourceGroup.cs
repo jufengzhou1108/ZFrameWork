@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -20,9 +19,6 @@ namespace ZFrameWork.PlayTests
 
         private readonly Dictionary<string, Object> _assets = new();
         private readonly List<string> _releasedKeys = new();
-        private bool _cooled;
-
-        public bool IsCooled => _cooled;
 
         /// <summary>已释放的资源 key 列表，供验证清理。</summary>
         public IReadOnlyList<string> ReleasedKeys => _releasedKeys;
@@ -34,8 +30,6 @@ namespace ZFrameWork.PlayTests
 
         public T Load<T>(string path, string key) where T : Object
         {
-            if (!EnsureActive())
-                return null;
             if (FailAllLoadsConfig || !_assets.TryGetValue(key, out Object asset) || !(asset is T typed))
                 return null;
             return typed;
@@ -43,8 +37,6 @@ namespace ZFrameWork.PlayTests
 
         public async Task<T> LoadAsync<T>(string path, string key) where T : Object
         {
-            if (!EnsureActive())
-                return null;
             if (DelayConfig.TryGetValue(key, out int keyDelay) && keyDelay > 0)
                 await Task.Delay(keyDelay);
             return Load<T>(path, key);
@@ -57,35 +49,20 @@ namespace ZFrameWork.PlayTests
 
         public void Release(string key)
         {
-            if (!EnsureActive() || string.IsNullOrEmpty(key))
+            if (string.IsNullOrEmpty(key))
                 return;
             _releasedKeys.Add(key);
         }
 
-        public void ReleaseAll(bool coolDown = false)
+        public void ReleaseAll()
         {
-            if (IsCooled)
-                return;
             foreach (string key in _assets.Keys)
             {
                 if (!_releasedKeys.Contains(key))
                     _releasedKeys.Add(key);
             }
-            if (coolDown)
-                _cooled = true;
-        }
-
-        public void Dispose()
-        {
-            ReleaseAll(true);
-            GC.SuppressFinalize(this);
         }
 
         public bool IsReleased(string key) => _releasedKeys.Contains(key);
-
-        private bool EnsureActive()
-        {
-            return !IsCooled;
-        }
     }
 }

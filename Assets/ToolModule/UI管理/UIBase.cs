@@ -62,22 +62,13 @@ namespace ZFrameWork
                 ZLog.LogError($"[{GetType().Name}] 资源组尚未初始化，无法{operation}。");
                 return false;
             }
-            if (_resourceGroup.IsCooled)
-            {
-                ZLog.LogError($"[{GetType().Name}] 资源组处于冷却状态，无法{operation}。");
-                return false;
-            }
             return true;
         }
 
         internal bool EnsureResourceGroup(Func<IResourceGroup> fallbackFactory)
         {
             if (_resourceGroup != null)
-            {
-                if (_resourceGroup.IsCooled)
-                    ZLog.LogError($"[{GetType().Name}] UI 面板资源组已处于冷却状态。");
-                return !_resourceGroup.IsCooled;
-            }
+                return true;
 
             _resourceGroup = InitializeResourceGroup();
             if (_resourceGroup == null && fallbackFactory != null)
@@ -85,11 +76,6 @@ namespace ZFrameWork
             if (_resourceGroup == null)
             {
                 ZLog.LogError($"[{GetType().Name}] 缺少资源组，UI 面板无法管理自身资源。");
-                return false;
-            }
-            if (_resourceGroup.IsCooled)
-            {
-                ZLog.LogError($"[{GetType().Name}] 创建出的资源组处于冷却状态。");
                 return false;
             }
             return true;
@@ -139,7 +125,7 @@ namespace ZFrameWork
                 HideInternal();
 
             OnClose();
-            _resourceGroup?.ReleaseAll(true);
+            _resourceGroup?.ReleaseAll();
             _resourceGroup = null;
             _state = LifecycleState.Closed;
         }

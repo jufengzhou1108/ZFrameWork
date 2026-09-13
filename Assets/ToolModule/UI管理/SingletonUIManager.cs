@@ -173,7 +173,7 @@ namespace ZFrameWork
             GameObject prefab = await ResourceGroup.LoadAsync<GameObject>(path, path);
 
             // 等待期间被 Close：节点已移除，作废迟到结果
-            if (node.Removed || ResourceGroup.IsCooled)
+            if (node.Removed)
                 return;
 
             if (prefab == null)

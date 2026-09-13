@@ -112,7 +112,7 @@ namespace ZFrameWork
 
             GameObject prefab = await ResourceGroup.LoadAsync<GameObject>(path, path);
 
-            if (node.Removed || ResourceGroup.IsCooled)
+            if (node.Removed)
                 return;
 
             if (prefab == null)

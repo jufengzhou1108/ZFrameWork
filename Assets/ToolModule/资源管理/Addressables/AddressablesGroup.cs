@@ -7,14 +7,13 @@ namespace ZFrameWork
 {
     /// <summary>
     /// 业务侧资源访问组。每个 key 在组内只持有一份引用。
-    /// 显式调用 ReleaseAll/Dispose 是正常路径；
+    /// 显式调用 ReleaseAll 是正常路径；
     /// 忘记释放时由析构函数向 AddressablesHelper 登记孤儿账本，主线程代为释放。
     /// </summary>
     public sealed class AddressablesGroup : IResourceGroup
     {
         private readonly AddressablesLoadManager _manager;
         private HashSet<string> _managedKeys;
-        private bool _cooled;
 
         public AddressablesGroup(AddressablesLoadManager manager)
         {
@@ -26,8 +25,8 @@ namespace ZFrameWork
         /// <summary>业务忘记释放时兜底：向 Helper 登记账本快照，由主线程代为释放。</summary>
         ~AddressablesGroup()
         {
-            // 冷却即已还清账；正常路径 Dispose 会 SuppressFinalize，不会进到这里
-            if (_cooled || _managedKeys == null || _managedKeys.Count == 0)
+            // ReleaseAll 已归还集合并置空，这里即为空账，直接返回
+            if (_managedKeys == null || _managedKeys.Count == 0)
                 return;
 
             string[] keys = new string[_managedKeys.Count];
@@ -35,47 +34,41 @@ namespace ZFrameWork
             AddressablesHelper.RegisterOrphan(_manager, keys);
         }
 
-        /// <summary>访问组是否已经冷却，冷却后不再提供加载和释放功能。</summary>
-        public bool IsCooled => _cooled;
-
         /// <summary>同步加载资源，组内重复访问不会增加引用计数。</summary>
         public T Load<T>(string path, string key) where T : UnityEngine.Object
         {
-            if (!EnsureActive())
-                return null;
-
             string managedKey = _manager.BuildKey<T>(key);
             if (string.IsNullOrEmpty(managedKey))
                 return null;
 
-            if (_managedKeys.Contains(managedKey))
+            if (_managedKeys != null && _managedKeys.Contains(managedKey))
                 return _manager.WaitForLoaded<T>(managedKey);
 
             T asset = _manager.Load<T>(path, key);
             if (asset == null)
                 return null;
 
-            _managedKeys.Add(managedKey);
+            (_managedKeys ??= HashSetPool<string>.Get()).Add(managedKey);
             return asset;
         }
 
         /// <summary>异步加载资源，组内重复访问只直接获取已加载资源。</summary>
         public async Task<T> LoadAsync<T>(string path, string key) where T : UnityEngine.Object
         {
-            if (!EnsureActive())
-                return null;
-
             string managedKey = _manager.BuildKey<T>(key);
             if (string.IsNullOrEmpty(managedKey))
                 return null;
 
-            if (_managedKeys.Contains(managedKey))
+            if (_managedKeys != null && _managedKeys.Contains(managedKey))
                 return await _manager.WaitForLoadedAsync<T>(managedKey);
 
-            _managedKeys.Add(managedKey);
+            // 预登记防并发重复计数；续体恢复时集合可能已被 ReleaseAll 归还进池，
+            // 故捕获局部引用，并只在仍归本组所有时才回滚
+            HashSet<string> managedKeys = _managedKeys ??= HashSetPool<string>.Get();
+            managedKeys.Add(managedKey);
             T asset = await _manager.LoadAsync<T>(path, key);
-            if (asset == null)
-                _managedKeys?.Remove(managedKey);
+            if (asset == null && ReferenceEquals(_managedKeys, managedKeys))
+                managedKeys.Remove(managedKey);
             return asset;
         }
 
@@ -88,7 +81,7 @@ namespace ZFrameWork
         /// <summary>按 key 释放单个资源，适用于调用方不保留资源类型的场景。</summary>
         public void Release(string key)
         {
-            if (!EnsureActive() || string.IsNullOrEmpty(key))
+            if (_managedKeys == null || string.IsNullOrEmpty(key))
                 return;
 
             string prefix = key + "_";
@@ -108,14 +101,14 @@ namespace ZFrameWork
         }
 
         /// <summary>
-        /// 释放组内全部资源。coolDown 为 true 时，访问组进入冷却状态且不再提供功能。
+        /// 释放组内全部资源，并归还池化集合。访问组本身保持可用，再次加载会重新取用集合。
         /// </summary>
-        public void ReleaseAll(bool coolDown = false)
+        public void ReleaseAll()
         {
-            if (_cooled)
+            if (_managedKeys == null)
                 return;
 
-            if (_managedKeys != null && _managedKeys.Count > 0)
+            if (_managedKeys.Count > 0)
             {
                 List<string> managedKeys = ListPool<string>.Get();
                 foreach (string managedKey in _managedKeys)
@@ -126,30 +119,8 @@ namespace ZFrameWork
                 _managedKeys.Clear();
             }
 
-            if (coolDown)
-            {
-                _cooled = true;
-                HashSetPool<string>.Release(_managedKeys);
-                _managedKeys = null;
-            }
-        }
-
-        /// <summary>确定性释放并冷却访问组。</summary>
-        public void Dispose()
-        {
-            ReleaseAll(true);
-            GC.SuppressFinalize(this);
-        }
-
-        private bool EnsureActive()
-        {
-            if (_cooled)
-            {
-                ZLog.LogError("[AddressablesGroup] 访问组已经冷却，不能继续使用。");
-                return false;
-            }
-
-            return true;
+            HashSetPool<string>.Release(_managedKeys);
+            _managedKeys = null;
         }
     }
 }

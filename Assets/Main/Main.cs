@@ -227,9 +227,12 @@ public class Main : MonoBehaviour
             var manager = new AddressablesLoadManager();
             IResourceGroup group = new AddressablesGroup(manager);
 
-            Require(!group.IsCooled, "新建资源组不应该处于冷却状态");
-            group.ReleaseAll(true);
-            Require(group.IsCooled, "通过接口释放并冷却后应该进入冷却状态");
+            // 释放只清空账本，不改变组的使用状态；重复调用应当幂等
+            ZLog.Log("[TEST][EXPECTED-DIAGNOSTIC] 释放后使用空 path 会记录错误，但不应导致测试失败");
+            group.ReleaseAll();
+            group.ReleaseAll();
+            Require(group.Load<UnityEngine.Object>("", "after-release") == null,
+                "通过接口释放后资源组仍应能处理新的加载请求");
         });
 
         RunCase("AddressablesLoadManager_BuildKey_AppendsTypeName", () =>
@@ -287,47 +290,26 @@ public class Main : MonoBehaviour
             var group = new AddressablesGroup(new AddressablesLoadManager());
             group.Release<UnityEngine.Object>("missing");
             group.Release("missing");
-            group.ReleaseAll(false);
+            group.ReleaseAll();
 
-            Require(!group.IsCooled, "ReleaseAll(false) 不应该冷却资源组");
+            ZLog.Log("[TEST][EXPECTED-DIAGNOSTIC] 释放未知资源后加载空 path 会记录错误，但不应导致测试失败");
+            Require(group.Load<UnityEngine.Object>("", "after-release") == null,
+                "释放未知资源不应破坏资源组状态");
         });
 
-        RunCase("AddressablesGroup_ReleaseAllWithoutCooldown_RemainsUsable", () =>
+        RunCase("AddressablesGroup_ReleaseAll_RemainsUsable", () =>
         {
             var group = new AddressablesGroup(new AddressablesLoadManager());
-            group.ReleaseAll(false);
+            group.ReleaseAll();
 
-            Require(!group.IsCooled, "不冷却释放后资源组应该保持可用");
             ZLog.Log("[TEST][EXPECTED-DIAGNOSTIC] 释放后使用空 path 会记录错误，但不应导致测试失败");
             Require(group.Load<UnityEngine.Object>("", "after-release") == null,
                 "释放后资源组仍应能处理新的加载请求");
-        });
 
-        RunCase("AddressablesGroup_CoolDown_DisablesSyncAndAsyncFunctions", () =>
-        {
-            var manager = new AddressablesLoadManager();
-            var group = new AddressablesGroup(manager);
-            group.ReleaseAll(true);
-
-            Require(group.IsCooled, "ReleaseAll(true) 后访问组应该进入冷却状态");
-
-            ZLog.Log("[TEST][EXPECTED-DIAGNOSTIC] 冷却访问组继续访问会记录错误，但不应导致测试失败");
-            Require(group.Load<UnityEngine.Object>("missing", "cooled") == null,
-                "冷却访问组不应该继续加载资源");
-
-            UnityEngine.Object asyncAsset = group.LoadAsync<UnityEngine.Object>("missing", "cooled")
+            UnityEngine.Object asyncAsset = group.LoadAsync<UnityEngine.Object>("", "after-release")
                 .GetAwaiter()
                 .GetResult();
-            Require(asyncAsset == null, "冷却访问组的异步加载应该返回 null");
-        });
-
-        RunCase("AddressablesGroup_Dispose_IsIdempotentAndCools", () =>
-        {
-            var group = new AddressablesGroup(new AddressablesLoadManager());
-            group.Dispose();
-            group.Dispose();
-
-            Require(group.IsCooled, "Dispose 后资源组应该处于冷却状态");
+            Require(asyncAsset == null, "释放后资源组的异步加载仍应能处理新的请求");
         });
     }
 
