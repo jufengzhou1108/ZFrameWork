@@ -28,6 +28,7 @@ public class Main : MonoBehaviour
         RunSuite("EventCenter.Integration", RunEventCenterTests);
         RunSuite("CollectionPool.Basic", RunCollectionPoolTests);
         RunSuite("ResourceManagement.State", RunResourceManagementTests);
+        RunSuite("ReactiveData.Basic", RunReactiveDataTests);
         ZLog.Log($"[TEST][SUMMARY] total={_total}, passed={_passed}, failed={_failed}, skipped={_skipped}");
 #if UNITY_EDITOR
         _batchPlayModeTestCompleted = true;
@@ -313,6 +314,102 @@ public class Main : MonoBehaviour
         });
     }
 
+    private void RunReactiveDataTests()
+    {
+        RunCase("ReactiveValue_InitialChangeAndUnsubscribe", () =>
+        {
+            var value = new ReactiveValue<int>(10);
+            int callCount = 0;
+            int received = 0;
+            Action unsubscribe = value.Subscribe(current =>
+            {
+                callCount++;
+                received = current;
+            });
+
+            Require(callCount == 1 && received == 10, "响应式值首次订阅应该立即传播当前值");
+            Require(!value.SetValue(10) && callCount == 1, "相同值不应该重复传播");
+            Require(value.SetValue(20) && callCount == 2 && received == 20,
+                "不同值应该保存并传播");
+
+            unsubscribe();
+            unsubscribe();
+            value.Value = 30;
+            Require(callCount == 2, "取消订阅应该幂等且不再接收传播");
+        });
+
+        RunCase("ReactiveValue_InitialCallbackException_DoesNotSubscribe", () =>
+        {
+            var value = new ReactiveValue<int>(10);
+            int callCount = 0;
+            ZLog.Log("[TEST][EXPECTED-DIAGNOSTIC] 首次响应式回调异常会报错且不建立订阅");
+            Action unsubscribe = value.Subscribe(_ =>
+            {
+                callCount++;
+                throw new InvalidOperationException("expected");
+            });
+
+            value.Value = 20;
+            Require(callCount == 1, "首次回调异常时不应该建立订阅");
+            unsubscribe();
+        });
+
+        RunCase("ReactiveList_MutationsNotifyReadOnlyView", () =>
+        {
+            var list = new ReactiveList<int>(new[] { 1, 2 });
+            int callCount = 0;
+            int lastCount = -1;
+            Action unsubscribe = list.Subscribe(items =>
+            {
+                callCount++;
+                lastCount = items.Count;
+            });
+
+            list.Add(3);
+            Require(!list.SetValue(0, 1), "列表设置相同值时不应该传播");
+            Require(list.SetValue(0, 10), "列表设置不同值应该成功");
+            Require(!list.Remove(99), "删除不存在的列表元素应该失败且不传播");
+            list.RemoveAt(1);
+            list.Clear();
+
+            Require(callCount == 5 && lastCount == 0,
+                "列表应该首次传播并在每次有效修改后传播当前只读视图");
+
+            unsubscribe();
+            list.Add(4);
+            Require(callCount == 5, "列表取消订阅后不应该继续传播");
+        });
+
+        RunCase("ReactiveDictionary_MutationsNotifyReadOnlyView", () =>
+        {
+            var dictionary = new ReactiveDictionary<string, int>();
+            int callCount = 0;
+            int lastCount = -1;
+            Action unsubscribe = dictionary.Subscribe(items =>
+            {
+                callCount++;
+                lastCount = items.Count;
+            });
+
+            Require(dictionary.Add("health", 10), "字典应该能够添加新键");
+            Require(dictionary.ContainsKey("health"), "字典应该能够判断是否包含指定键");
+            ZLog.Log("[TEST][EXPECTED-DIAGNOSTIC] 响应式字典重复添加键会报错并拒绝执行");
+            Require(!dictionary.Add("health", 20), "字典不应该重复添加同一个键");
+            Require(!dictionary.SetValue("health", 10), "字典设置相同值时不应该传播");
+            Require(dictionary.SetValue("health", 20), "字典应该能够修改已有键的值");
+            Require(dictionary.TryGetValue("health", out int health) && health == 20,
+                "字典应该能够尝试获取指定键的值");
+            Require(dictionary.Add("level", 1), "字典应该能够添加第二个键");
+            Require(dictionary.Remove("health"), "字典应该能够删除已有键");
+            dictionary.Clear();
+            dictionary.Clear();
+            Require(callCount == 6 && lastCount == 0,
+                "字典应该首次传播并在每次有效修改后传播当前只读视图");
+
+            unsubscribe();
+        });
+    }
+
     private void RunListActionTests()
     {
         var action = new ListAction();
@@ -587,7 +684,7 @@ public class Main : MonoBehaviour
             Require(callCount == 2, "不同闭包实例的委托应该分别执行");
         });
 
-        RunCase("LinkedAction_CallbackException_StopsInvocationAndPropagates", () =>
+        RunCase("LinkedAction_CallbackException_LogsAndContinues", () =>
         {
             var action = new ListAction();
             bool laterCallbackCalled = false;
@@ -595,18 +692,10 @@ public class Main : MonoBehaviour
             action.Subscribe(() => throw new InvalidOperationException("expected"));
             action.Subscribe(() => laterCallbackCalled = true);
 
-            bool caught = false;
-            try
-            {
-                action.Invoke();
-            }
-            catch (InvalidOperationException exception)
-            {
-                caught = exception.Message == "expected";
-            }
+            ZLog.Log("[TEST][EXPECTED-DIAGNOSTIC] 回调异常会记录错误，但不应中断后续回调");
+            action.Invoke();
 
-            Require(caught, "回调异常应该向调用方传播");
-            Require(!laterCallbackCalled, "异常后续回调不应该继续执行");
+            Require(laterCallbackCalled, "回调异常不应该中断后续回调");
         });
 
         RunCase("LinkedAction_InvokeRepeatedly_AfterTraversalStateIsReusable", () =>
@@ -631,20 +720,12 @@ public class Main : MonoBehaviour
             action.Subscribe(failing);
             action.Subscribe(healthy);
 
-            bool caught = false;
-            try
-            {
-                action.Invoke();
-            }
-            catch (InvalidOperationException exception)
-            {
-                caught = exception.Message == "expected";
-            }
-
-            Require(caught, "预期回调异常应该被传播");
+            ZLog.Log("[TEST][EXPECTED-DIAGNOSTIC] 异常回调会记录错误，委托容器应保持可用");
+            action.Invoke();
+            Require(healthyCount == 1, "异常回调不应该阻止其他回调执行");
             Require(action.Unsubscribe(failing), "异常回调应该可以被移除");
             action.Invoke();
-            Require(healthyCount == 1, "移除异常回调后剩余回调应该可以继续执行");
+            Require(healthyCount == 2, "移除异常回调后剩余回调应该可以继续执行");
         });
     }
 

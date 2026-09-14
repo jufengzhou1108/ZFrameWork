@@ -54,19 +54,32 @@ namespace ZFrameWork
         public void Invoke(T arg)
         {
             var visited = HashSetPool<Action<T>>.Get();
-            for (var index = 0; index < _list.Count;)
+            try
             {
-                var action = _list[index];
-                if (!visited.Add(action))
+                for (var index = 0; index < _list.Count;)
                 {
-                    index++;
-                    continue;
-                }
+                    var action = _list[index];
+                    if (!visited.Add(action))
+                    {
+                        index++;
+                        continue;
+                    }
 
-                action?.Invoke(arg);
-                index = 0;
+                    try
+                    {
+                        action?.Invoke(arg);
+                    }
+                    catch (Exception exception)
+                    {
+                        ZLog.LogError($"ListAction<{typeof(T).Name}> 回调执行异常：{exception}");
+                    }
+                    index = 0;
+                }
             }
-            HashSetPool<Action<T>>.Release(visited);
+            finally
+            {
+                HashSetPool<Action<T>>.Release(visited);
+            }
         }
     }
 
@@ -121,19 +134,32 @@ namespace ZFrameWork
         public void Invoke()
         {
             var visited = HashSetPool<Action>.Get();
-            for (var index = 0; index < _list.Count;)
+            try
             {
-                var action = _list[index];
-                if (!visited.Add(action))
+                for (var index = 0; index < _list.Count;)
                 {
-                    index++;
-                    continue;
-                }
+                    var action = _list[index];
+                    if (!visited.Add(action))
+                    {
+                        index++;
+                        continue;
+                    }
 
-                action?.Invoke();
-                index = 0;
+                    try
+                    {
+                        action?.Invoke();
+                    }
+                    catch (Exception exception)
+                    {
+                        ZLog.LogError($"ListAction 回调执行异常：{exception}");
+                    }
+                    index = 0;
+                }
             }
-            HashSetPool<Action>.Release(visited);
+            finally
+            {
+                HashSetPool<Action>.Release(visited);
+            }
         }
     }
 }
