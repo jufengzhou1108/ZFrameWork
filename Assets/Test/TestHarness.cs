@@ -38,6 +38,15 @@ namespace ZFrameWork.PlayTests
             }
         }
 
+        /// <summary>重置计数器。每个套件 RunAll 开头调用，保证各套件独立汇总。</summary>
+        public static void Reset()
+        {
+            Total = 0;
+            Passed = 0;
+            Failed = 0;
+            Skipped = 0;
+        }
+
         public static void Skip(string name, string reason)
         {
             Total++;

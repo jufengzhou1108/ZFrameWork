@@ -9,18 +9,11 @@ namespace ZFrameWork
     /// <summary>
     /// UI 根节点，全局唯一且不随场景切换销毁。
     /// Awake 时按 UIManagerConfig 的层级配置创建各层 Canvas 与管理器，并兜底创建 EventSystem。
-    /// 资源组工厂由游戏入口通过 SetResourceGroupFactory 注入。
+    /// 资源组统一由 ResourceGroupFactory 提供。
     /// </summary>
     public sealed class UIRoot : SingletonAutoMono<UIRoot>
     {
-        private static Func<IResourceGroup> _resourceGroupFactory;
         private readonly List<UIManager> _managers = new();
-
-        /// <summary>注入全局资源组工厂，须在 UIRoot 首次访问前调用。</summary>
-        public static void SetResourceGroupFactory(Func<IResourceGroup> factory)
-        {
-            _resourceGroupFactory = factory;
-        }
 
         private void Awake()
         {
@@ -42,7 +35,7 @@ namespace ZFrameWork
             {
                 if (Activator.CreateInstance(types[i]) is UIManager manager)
                 {
-                    manager.Bind(CreateCanvas($"{types[i].Name}Canvas", i * 100), _resourceGroupFactory);
+                    manager.Bind(CreateCanvas($"{types[i].Name}Canvas", i * 100), ResourceGroupFactory.Create);
                     _managers.Add(manager);
                 }
                 else

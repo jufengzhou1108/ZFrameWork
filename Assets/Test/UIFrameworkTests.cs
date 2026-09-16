@@ -36,6 +36,7 @@ namespace ZFrameWork.PlayTests
 
         public static async Task RunAll()
         {
+            TestHarness.Reset();
             try
             {
                 SetupOnce();
@@ -141,7 +142,7 @@ namespace ZFrameWork.PlayTests
                 return;
             _initialized = true;
 
-            UIRoot.SetResourceGroupFactory(CreateFakeGroup);
+            ResourceGroupFactory.SetCreator(CreateFakeGroup);
             _ = UIRoot.Instance; // 触发 Awake：创建 EventSystem 与各层管理器
 
             RegisterView<TestViewA>(PathA);

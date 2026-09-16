@@ -27,7 +27,6 @@ namespace ZFrameWork
             if (_entries.TryGetValue(managedKey, out ResourceEntry existing))
             {
                 existing.ReferenceCount++;
-                existing.ReleaseWhenLoaded = false;
                 if (existing.IsLoading)
                 {
                     existing.Handle.WaitForCompletion();
@@ -65,7 +64,6 @@ namespace ZFrameWork
             if (_entries.TryGetValue(managedKey, out ResourceEntry existing))
             {
                 existing.ReferenceCount++;
-                existing.ReleaseWhenLoaded = false;
                 if (existing.IsLoading)
                 {
                     if (existing.LoadTask != null)
@@ -126,7 +124,6 @@ namespace ZFrameWork
                     continue;
 
                 entry.ReferenceCount = 0;
-                entry.ReleaseWhenLoaded = true;
                 if (!entry.IsLoading)
                     ReleaseEntry(entry);
             }
@@ -153,7 +150,7 @@ namespace ZFrameWork
         {
             if (string.IsNullOrEmpty(managedKey) ||
                 !_entries.TryGetValue(managedKey, out ResourceEntry entry) ||
-                entry.IsLoading || entry.HandleReleased)
+                entry.IsLoading)
             {
                 return null;
             }
@@ -230,10 +227,7 @@ namespace ZFrameWork
                 return;
 
             if (entry.IsLoading)
-            {
-                entry.ReleaseWhenLoaded = true;
-                return;
-            }
+                return;   // 在途：完成后 CompleteLoad 按 ReferenceCount <= 0 立即释放
 
             ReleaseEntry(entry);
         }
@@ -280,10 +274,9 @@ namespace ZFrameWork
 
         private UnityEngine.Object CompleteLoad(ResourceEntry entry, UnityEngine.Object asset)
         {
-            if (entry.IsCompleted)
-                return entry.Asset;
+            if (!entry.IsLoading)
+                return entry.Asset;   // 已完成过（含失败路径），幂等返回
 
-            entry.IsCompleted = true;
             entry.IsLoading = false;
 
             bool succeeded = entry.Handle.Status == AsyncOperationStatus.Succeeded && asset != null;
@@ -296,9 +289,8 @@ namespace ZFrameWork
                 ZLog.LogError($"[AddressablesLoadManager] 资源加载失败，path={entry.Path}, key={entry.ManagedKey}。");
             }
 
-            bool releaseImmediately = !succeeded ||
-                                      entry.ReferenceCount <= 0 ||
-                                      entry.ReleaseWhenLoaded;
+            // 计数 <= 0 覆盖了"加载中被 ReleaseAll / ReleaseManagedKey 减空"的全部情况
+            bool releaseImmediately = !succeeded || entry.ReferenceCount <= 0;
             if (releaseImmediately)
             {
                 ReleaseEntry(entry);
@@ -310,20 +302,18 @@ namespace ZFrameWork
 
         private void FailEntry(ResourceEntry entry, Exception exception)
         {
+            if (!entry.IsLoading)
+                return;   // 已完成/已失败（两个 catch 调用者可能先后到达），幂等
+
             ZLog.LogError($"[AddressablesLoadManager] 创建资源加载操作失败，path={entry.Path}, key={entry.ManagedKey}, exception={exception}");
-            entry.IsCompleted = true;
             entry.IsLoading = false;
             ReleaseEntry(entry);
         }
 
         private void ReleaseEntry(ResourceEntry entry)
         {
-            if (!entry.HandleReleased)
-            {
-                if (entry.Handle.IsValid())
-                    Addressables.Release(entry.Handle);
-                entry.HandleReleased = true;
-            }
+            if (entry.Handle.IsValid())
+                Addressables.Release(entry.Handle);
 
             if (_entries.TryGetValue(entry.ManagedKey, out ResourceEntry current) &&
                 ReferenceEquals(current, entry))
@@ -342,9 +332,6 @@ namespace ZFrameWork
             public UnityEngine.Object Asset;
             public int ReferenceCount;
             public bool IsLoading = true;
-            public bool IsCompleted;
-            public bool ReleaseWhenLoaded;
-            public bool HandleReleased;
             public Task<UnityEngine.Object> LoadTask;
         }
     }
