@@ -24,12 +24,14 @@ namespace ZFrameWork
 
         public bool Add(TKey key, TValue value)
         {
-            if (!_items.TryAdd(key, value))
+            // 用 ContainsKey + Add 而非 Dictionary.TryAdd：后者是 .NET Standard 2.1+ API，Unity 的 netstandard2.0 档位不可用
+            if (_items.ContainsKey(key))
             {
                 ZLog.LogError($"ReactiveDictionary 添加失败，键已存在：{key}");
                 return false;
             }
 
+            _items.Add(key, value);
             NotifyChanged();
             return true;
         }

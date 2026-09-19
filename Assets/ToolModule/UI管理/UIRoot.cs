@@ -35,7 +35,7 @@ namespace ZFrameWork
             {
                 if (Activator.CreateInstance(types[i]) is UIManager manager)
                 {
-                    manager.Bind(CreateCanvas($"{types[i].Name}Canvas", i * 100), ResourceGroupFactory.Create);
+                    manager.Bind(CreateCanvas($"{types[i].Name}Canvas", i * 100));
                     _managers.Add(manager);
                 }
                 else
@@ -52,7 +52,14 @@ namespace ZFrameWork
             Canvas canvas = canvasObject.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = sortingOrder;
-            canvasObject.AddComponent<CanvasScaler>();
+
+            // 设计稿分辨率驱动缩放：任何屏幕上都保证设计矩形完整可见（Expand），
+            // 多出来的空间交给锚点分配。不显式设置会拿到 800x600 的默认参考分辨率。
+            CanvasScaler scaler = canvasObject.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
+            scaler.referenceResolution = UIManagerConfig.ReferenceResolution;
+
             canvasObject.AddComponent<GraphicRaycaster>();
             return canvas;
         }

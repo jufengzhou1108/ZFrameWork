@@ -27,9 +27,7 @@ namespace ZFrameWork.PlayTests
         {
             try
             {
-                await UIFrameworkTests.RunAll();
-                await ReactiveDataTests.RunAll();
-                await AddressablesLoadManagerTests.RunAll();
+                await CanvasTests.RunAll();
             }
             catch (Exception e)
             {

@@ -65,14 +65,14 @@ namespace ZFrameWork
             return true;
         }
 
-        internal bool EnsureResourceGroup(Func<IResourceGroup> fallbackFactory)
+        internal bool EnsureResourceGroup()
         {
             if (_resourceGroup != null)
                 return true;
 
             _resourceGroup = InitializeResourceGroup();
-            if (_resourceGroup == null && fallbackFactory != null)
-                _resourceGroup = fallbackFactory();
+            if (_resourceGroup == null)
+                _resourceGroup = ResourceGroupFactory.Create();
             if (_resourceGroup == null)
             {
                 ZLog.LogError($"[{GetType().Name}] 缺少资源组，UI 面板无法管理自身资源。");

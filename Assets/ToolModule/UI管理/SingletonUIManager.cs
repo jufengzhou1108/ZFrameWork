@@ -197,7 +197,7 @@ namespace ZFrameWork
             UIBase panel = Object.Instantiate(source);
             node.UI = panel;
             panel.SetKeyInternal(path);
-            if (!panel.EnsureResourceGroup(ResourceGroupFactory))
+            if (!panel.EnsureResourceGroup())
             {
                 Object.Destroy(panel.gameObject);
                 RemoveNode(node);

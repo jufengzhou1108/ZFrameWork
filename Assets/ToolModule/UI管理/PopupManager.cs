@@ -10,25 +10,26 @@ namespace ZFrameWork
     /// 弹窗管理器。栈管理 PopupUINode（界面、加载任务、期望状态），
     /// 只提供 PushView（显示并压栈）、PopView（关闭栈顶）、Clear（关闭所有）。
     /// 重复与乱序处理与单例 UI 一致：UINode 同步代表去重、复用加载任务、按目标状态仲裁。
-    /// 模态拦截由 UIBlocker 实现，始终垫在栈顶弹窗之下。
+    /// 模态拦截由 RaycastMask 实现，始终垫在栈顶弹窗之下。
     /// </summary>
     public sealed class PopupManager : UIManager<PopupManager>
     {
         private readonly LinkedList<UINode> _stack = new();
         private readonly Dictionary<Type, UINode> _nodes = new();
-        private UIBlocker _blocker;
+        private RaycastMask _raycastMask;
 
         protected override void OnInitialize()
         {
-            GameObject blockerObject = new GameObject("PopupBlocker", typeof(RectTransform));
-            RectTransform rect = (RectTransform)blockerObject.transform;
+            // 显式带上 CanvasRenderer：RaycastMask 是 Graphic，缺了它射线判定会退化（详见 RaycastMask 注释）
+            GameObject maskObject = new GameObject("RaycastMask", typeof(RectTransform), typeof(CanvasRenderer));
+            RectTransform rect = (RectTransform)maskObject.transform;
             rect.SetParent(Canvas.transform, false);
             rect.anchorMin = Vector2.zero;
             rect.anchorMax = Vector2.one;
             rect.offsetMin = Vector2.zero;
             rect.offsetMax = Vector2.zero;
-            _blocker = blockerObject.AddComponent<UIBlocker>();
-            blockerObject.SetActive(false);
+            _raycastMask = maskObject.AddComponent<RaycastMask>();
+            maskObject.SetActive(false);
         }
 
         /// <summary>
@@ -69,7 +70,7 @@ namespace ZFrameWork
                 return;
 
             RemoveNode(top);
-            SyncBlocker();
+            SyncRaycastMask();
         }
 
         /// <summary>关闭所有弹窗。单例 UI 发生界面切换时由 SingletonUIManager 调用。</summary>
@@ -80,7 +81,7 @@ namespace ZFrameWork
 
             while (_stack.Last != null)
                 RemoveNode(_stack.Last.Value);
-            SyncBlocker();
+            SyncRaycastMask();
         }
 
         internal override void ClearAll()
@@ -100,13 +101,13 @@ namespace ZFrameWork
             if (!UIViewConfig.TryGetPath(node.Key, out string path))
             {
                 RemoveNode(node);
-                SyncBlocker();
+                SyncRaycastMask();
                 return;
             }
             if (!EnsureResourceGroup())
             {
                 RemoveNode(node);
-                SyncBlocker();
+                SyncRaycastMask();
                 return;
             }
 
@@ -119,7 +120,7 @@ namespace ZFrameWork
             {
                 ZLog.LogError($"[PopupManager] 弹窗加载失败：{node.Key.Name}, path={path}");
                 RemoveNode(node);
-                SyncBlocker();
+                SyncRaycastMask();
                 return;
             }
 
@@ -131,14 +132,14 @@ namespace ZFrameWork
                 TView panel = Object.Instantiate(source);
                 node.UI = panel;
                 panel.SetKeyInternal(path);
-                if (panel.EnsureResourceGroup(ResourceGroupFactory))
+                if (panel.EnsureResourceGroup())
                 {
                     panel.transform.SetParent(Canvas.transform, false);
                     panel.gameObject.SetActive(false);
                     panel.SetData(data);   // 数据先于生命周期注入
                     panel.OpenInternal();
                     panel.ShowInternal();
-                    SyncBlocker();
+                    SyncRaycastMask();
                     return;
                 }
                 Object.Destroy(panel.gameObject);
@@ -149,7 +150,7 @@ namespace ZFrameWork
             }
 
             RemoveNode(node);
-            SyncBlocker();
+            SyncRaycastMask();
         }
 
         private void RemoveNode(UINode node)
@@ -178,13 +179,13 @@ namespace ZFrameWork
             node.Path = null;
         }
 
-        /// <summary>同步拦截器：垫在栈顶弹窗之下（兄弟索引 n-1），栈空时隐藏。</summary>
-        private void SyncBlocker()
+        /// <summary>同步射线遮罩：垫在栈顶弹窗之下（兄弟索引 n-1），栈空时隐藏。</summary>
+        private void SyncRaycastMask()
         {
             // Unity 伪 null：物体销毁后引用仍在，直接使用会抛 MissingReferenceException
-            if (_blocker == null || Canvas == null)
+            if (_raycastMask == null || Canvas == null)
             {
-                ZLog.LogError("[PopupManager] 拦截器或所在 Canvas 已销毁，无法同步拦截器。");
+                ZLog.LogError("[PopupManager] 射线遮罩或所在 Canvas 已销毁，无法同步射线遮罩。");
                 return;
             }
 
@@ -197,12 +198,12 @@ namespace ZFrameWork
 
             if (_stack.Count > 0)
             {
-                _blocker.gameObject.SetActive(true);
-                _blocker.transform.SetSiblingIndex(_stack.Count - 1);
+                _raycastMask.gameObject.SetActive(true);
+                _raycastMask.transform.SetSiblingIndex(_stack.Count - 1);
             }
             else
             {
-                _blocker.gameObject.SetActive(false);
+                _raycastMask.gameObject.SetActive(false);
             }
         }
     }

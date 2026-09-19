@@ -12,18 +12,14 @@ namespace ZFrameWork
         /// <summary>本层 Canvas，由 UIRoot 创建。</summary>
         protected Canvas Canvas { get; private set; }
 
-        /// <summary>全局资源组工厂，初始化时由 UIRoot 下发。</summary>
-        protected Func<IResourceGroup> ResourceGroupFactory { get; private set; }
-
         private IResourceGroup _resourceGroup;
 
         /// <summary>管理器自己的资源组，负责加载界面预制体，销毁时兜底释放。</summary>
         protected IResourceGroup ResourceGroup => _resourceGroup;
 
-        internal void Bind(Canvas canvas, Func<IResourceGroup> factory)
+        internal void Bind(Canvas canvas)
         {
             Canvas = canvas;
-            ResourceGroupFactory = factory;
             BindInstance();
             OnInitialize();
         }
@@ -46,13 +42,7 @@ namespace ZFrameWork
             if (_resourceGroup != null)
                 return true;
 
-            if (ResourceGroupFactory == null)
-            {
-                ZLog.LogError($"[{GetType().Name}] 缺少全局资源组工厂（UIRoot.SetResourceGroupFactory 未调用），无法创建管理器资源组。");
-                return false;
-            }
-
-            _resourceGroup = ResourceGroupFactory();
+            _resourceGroup = ResourceGroupFactory.Create();
             if (_resourceGroup == null)
             {
                 ZLog.LogError($"[{GetType().Name}] 资源组工厂返回了空资源组。");
