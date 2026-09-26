@@ -43,7 +43,7 @@ namespace ZFrameWork
             if (_flushHooked)
                 return;
             _flushHooked = true;
-            PublicMono.Instance.AddUpdateAction<object>(FlushOrphanGroups);
+            PublicMono.Instance.AddUpdateAction(FlushOrphanGroups);
         }
 
         /// <summary>在主线程消费孤儿组，代为还账并警告。由 PublicMono 每帧驱动。</summary>

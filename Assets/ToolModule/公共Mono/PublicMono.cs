@@ -2,10 +2,10 @@ using System;
 using UnityEngine;
 
 
-//����mono
-//1.����Ϊ��mono�ṩЭ�����
-//2.��������ִ�и��º���������������
-//3.����Ϊ��mono�ṩ���ں���
+// 公共 Mono
+// 1.为没有 MonoBehaviour 的类提供协程宿主
+// 2.每帧驱动注册进来的更新回调
+// 3.常驻不随场景销毁（继承自 SingletonAutoMono）
 namespace ZFrameWork
 {
 
@@ -13,12 +13,12 @@ public class PublicMono : SingletonAutoMono<PublicMono>
 {
     private readonly ListAction updateActions = new();
 
-    public void AddUpdateAction<T>(Action action)
+    public void AddUpdateAction(Action action)
     {
         updateActions.Subscribe(action);
     }
 
-    public void RemoveUpdateAction<T>(Action action)
+    public void RemoveUpdateAction(Action action)
     {
         updateActions.Unsubscribe(action);
     }

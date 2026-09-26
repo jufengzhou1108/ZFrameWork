@@ -1,0 +1,7 @@
+1.为了让不同的业务类（UI或者其它业务类）可以将自己创建的model分享给其他类，所以我们使用这个共享数据中心
+2.共享数据中心（ShareModelCenter），对共享容器（ShareContainer）进行单例封装，语义上只负责分享（Set）数据model类，可以取消分享（Delete），获取分享（Get）
+3.类共享容器共享容器内部有一个字典（key为string，value为obejct）
+提供放入（泛型），重复就报错，为null报错，空key报错
+提供获取（泛型），返回对应的model，无key报错，使用is转换，为null报错，空key报错
+提供删除，删除对应的字典项，无key报错，空key报错
+

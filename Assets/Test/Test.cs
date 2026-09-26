@@ -1,5 +1,4 @@
 using System;
-using System.Threading.Tasks;
 using UnityEngine;
 
 namespace ZFrameWork.PlayTests
@@ -20,14 +19,11 @@ namespace ZFrameWork.PlayTests
                 return;
             }
             _executed = true;
-            RunAsync();
-        }
 
-        private async void RunAsync()
-        {
             try
             {
-                await CanvasTests.RunAll();
+                PoolTests.RunAll();
+                StateMachineTests.RunAll();
             }
             catch (Exception e)
             {

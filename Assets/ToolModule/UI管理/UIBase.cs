@@ -28,10 +28,22 @@ namespace ZFrameWork
         public bool IsShown => _state == LifecycleState.Shown;
         public string Key => _key;
 
+        /// <summary>
+        /// 设置 Controller 的基类函数。ViewModel 与 Controller 是业务自己的普通类，基类不持有它们；
+        /// 子类选择性重写本函数，做自己的类型化登记。
+        /// 约定：View 在 OnOpen 中创建 ViewModel 与 Controller，完成 View->ViewModel 绑定后
+        /// 将 ViewModel 注入 Controller；界面关闭时的解绑与回收由子类在 OnClose 中自行处理。
+        /// </summary>
+        protected virtual void SetController() { }
+
         /// <summary>子类重写此方法创建自己的资源组，返回空则使用管理器下发的工厂。</summary>
         protected virtual IResourceGroup InitializeResourceGroup() => null;
 
-        protected virtual void OnOpen() { }
+        protected virtual void OnOpen()
+        {
+            // 约定：需要 ViewModel/Controller 的界面在此创建，完成 View->ViewModel 绑定后注入，
+            // 并重写 SetController 做类型化登记；不需要的界面（直接读 Model）什么都不用做。
+        }
         protected virtual void OnShow() { }
         protected virtual void OnHide() { }
         protected virtual void OnClose() { }

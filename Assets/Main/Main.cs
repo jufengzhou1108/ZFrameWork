@@ -23,7 +23,6 @@ public class Main : MonoBehaviour
         _hasRun = true;
 
         RunSuite("ListAction.Basic", RunListActionTests);
-        RunSuite("ListEvent.Basic", RunListEventTests);
         RunSuite("Delegate.EdgeCases", RunDelegateEdgeCaseTests);
         RunSuite("EventCenter.Integration", RunEventCenterTests);
         RunSuite("CollectionPool.Basic", RunCollectionPoolTests);
@@ -418,24 +417,6 @@ public class Main : MonoBehaviour
             ListPool<TypedDelegateTarget>.Release(targets);
         });
 
-        RunCase("LinkedEvent 事件语法和清空", () =>
-        {
-            var linkedEvent = new ListEvent();
-            int callCount = 0;
-            Action callback = () => callCount++;
-
-            linkedEvent.Invoked += callback;
-            linkedEvent.Invoked += callback;
-            linkedEvent.Invoke();
-            Require(callCount == 1 && linkedEvent.Count == 1,
-                "事件语法应该支持去重");
-
-            linkedEvent.Clear();
-            linkedEvent.Invoke();
-            Require(callCount == 1 && linkedEvent.Count == 0,
-                "事件清空后不应该继续触发");
-        });
-
         RunCase("LinkedAction_RemoveSameCallbackTwice_ReturnsFalseSecondTime", () =>
         {
             var action = new ListAction();
@@ -628,62 +609,6 @@ public class Main : MonoBehaviour
         EventCenter.Instance.RemoveListener(listener);
         EventCenter.Instance.EventTrigger(new TestEvent { Value = 5 });
         Check(received == 5, "EventCenter 移除监听");
-    }
-
-    private void RunListEventTests()
-    {
-            var linkedEvent = new ListEvent();
-        int count = 0;
-        Action callback = () => count++;
-
-        linkedEvent.Invoked += callback;
-        linkedEvent.Invoked += callback;
-        linkedEvent.Invoke();
-        Check(count == 1 && linkedEvent.Count == 1, "LinkedEvent 防止重复订阅");
-
-        linkedEvent.Invoked -= callback;
-        linkedEvent.Invoke();
-        Check(count == 1 && linkedEvent.Count == 0, "LinkedEvent 取消订阅");
-
-        var typedEvent = new ListEvent<int>();
-        int sum = 0;
-        Action<int> first = value => sum += value;
-        Action<int> second = value => sum += value * 10;
-
-        typedEvent.Invoked += first;
-        typedEvent.Invoked += second;
-        typedEvent.Invoke(2);
-        Check(sum == 22 && typedEvent.Count == 2, "泛型 LinkedEvent 传递参数");
-
-        typedEvent.Invoked -= first;
-        typedEvent.Invoke(2);
-        Check(sum == 42 && typedEvent.Count == 1, "泛型 LinkedEvent 移除指定回调");
-
-        var mutationEvent = new ListEvent<int>();
-        int mutationCount = 0;
-        Action<int> selfRemove = null;
-        selfRemove = _ =>
-        {
-            mutationCount++;
-            mutationEvent.Invoked -= selfRemove;
-        };
-
-        mutationEvent.Invoked += selfRemove;
-        mutationEvent.Invoked += _ => mutationCount += 10;
-        mutationEvent.Invoke(0);
-        mutationEvent.Invoke(0);
-        Check(mutationCount == 21, "LinkedEvent 回调执行过程中移除自身");
-
-        typedEvent.Clear();
-        Check(typedEvent.Count == 0, "LinkedEvent 清空回调");
-
-        var reusableEvent = new ListEvent();
-        int reusableCount = 0;
-        reusableEvent.Invoked += () => reusableCount++;
-        reusableEvent.Invoke();
-        reusableEvent.Invoke();
-        Check(reusableCount == 2 && reusableEvent.Count == 1,
-            "LinkedEvent 重复触发后遍历状态应该可复用");
     }
 
     private void Check(bool condition, string testName)

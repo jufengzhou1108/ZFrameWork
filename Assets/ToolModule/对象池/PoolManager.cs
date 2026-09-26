@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
-using UnityEngine;
 
 namespace ZFrameWork
 {
@@ -10,7 +8,7 @@ namespace ZFrameWork
     /// </summary>
     public class PoolManager
     {
-        private readonly Dictionary<Type, object> _pools = new Dictionary<Type, object>();
+        private readonly Dictionary<Type, IPool> _pools = new Dictionary<Type, IPool>();
 
         /// <summary>注册一个池实例。</summary>
         public void Register<T>(IPool<T> pool) where T : class
@@ -23,11 +21,11 @@ namespace ZFrameWork
             _pools[typeof(T)] = pool;
         }
 
-        /// <summary>获取某类型的池，未注册则返回 null。</summary>
+        /// <summary>获取某类型的池，未注册或类型不符则返回 null。</summary>
         public IPool<T> Get<T>() where T : class
         {
             if (_pools.TryGetValue(typeof(T), out var pool))
-                return (IPool<T>)pool;
+                return pool as IPool<T>;
             return null;
         }
 
@@ -42,10 +40,7 @@ namespace ZFrameWork
         {
             foreach (var kvp in _pools)
             {
-                // 通过反射调用池的 Clear 方法
-                var poolType = kvp.Value.GetType();
-                var clearMethod = poolType.GetMethod("Clear", BindingFlags.Public | BindingFlags.Instance);
-                clearMethod?.Invoke(kvp.Value, null);
+                kvp.Value.Clear();
             }
             _pools.Clear();
         }

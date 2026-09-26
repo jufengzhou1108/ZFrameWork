@@ -3,7 +3,8 @@ using UnityEngine;
 namespace ZFrameWork
 {
 
-public class TimeManager : SingletonMono<TimeManager>
+/// <summary>时间控制：暂停与恢复，直接操作 Time.timeScale。</summary>
+public static class TimeManager
 {
     public static void Pause()
     {

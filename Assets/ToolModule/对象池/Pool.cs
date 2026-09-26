@@ -5,12 +5,48 @@ using UnityEngine;
 namespace ZFrameWork
 {
     /// <summary>
-    /// 对象池。通过构造函数注入创建和销毁的委托。
+    /// 对象池的非泛型接口。管理器要按类型统一清理各种池，
+    /// 而泛型接口无法在不带类型参数的情况下调用，故清理入口放在这里。
+    /// </summary>
+    public interface IPool
+    {
+        /// <summary>清空池，释放所有空闲对象。</summary>
+        void Clear();
+    }
+
+    /// <summary>
+    /// 对象池对外接口，定义借出和归还行为。
+    /// </summary>
+    public interface IPool<T> : IPool where T : class
+    {
+        /// <summary>
+        /// 从池中获取一个对象。池中有空闲则直接返回，池空则创建新对象。
+        /// </summary>
+        T Get();
+
+        /// <summary>
+        /// 将对象归还到池中。
+        /// </summary>
+        void Add(T obj);
+
+        /// <summary>当前池中空闲对象数量。</summary>
+        int Count { get; }
+
+        /// <summary>池的容量上限。</summary>
+        int Capacity { get; }
+    }
+
+    /// <summary>
+    /// 对象池。通过构造函数注入创建、销毁与默认化的委托。
+    /// 默认化回调决定"对象归还后如何回到默认状态"：
+    /// 构造时显式注入优先，未注入（或注入 null，会报错）则从 PoolCallbackFactory 取该类型的默认回调，
+    /// 工厂取不到会返回空委托，因此池内部可以无条件调用，不必判空。
     /// </summary>
     public class Pool<T> : IPool<T> where T : class
     {
         private readonly Func<T> _createFunc;
         private readonly Action<T> _destroyAction;
+        private readonly Action<T> _resetAction;
 
         private readonly List<T> _freeObjects = new List<T>();
         private readonly List<float> _addTimes = new List<float>();
@@ -38,11 +74,27 @@ namespace ZFrameWork
         }
 
         /// <summary>
-        /// 创建对象池。
+        /// 创建对象池。默认化回调从 PoolCallbackFactory 按类型取。
         /// </summary>
         /// <param name="createFunc">创建对象的委托，不能为 null。</param>
         /// <param name="destroyAction">销毁对象的委托，可为 null。</param>
         public Pool(Func<T> createFunc, Action<T> destroyAction = null)
+            : this(createFunc, destroyAction, null, false)
+        {
+        }
+
+        /// <summary>
+        /// 创建对象池并显式注入默认化回调（优先于工厂里的默认回调）。
+        /// </summary>
+        /// <param name="createFunc">创建对象的委托，不能为 null。</param>
+        /// <param name="destroyAction">销毁对象的委托，可为 null。</param>
+        /// <param name="resetAction">默认化回调，传 null 会报错并回落到工厂。</param>
+        public Pool(Func<T> createFunc, Action<T> destroyAction, Action<T> resetAction)
+            : this(createFunc, destroyAction, resetAction, true)
+        {
+        }
+
+        private Pool(Func<T> createFunc, Action<T> destroyAction, Action<T> resetAction, bool resetInjected)
         {
             if (createFunc == null)
             {
@@ -54,6 +106,14 @@ namespace ZFrameWork
                 _createFunc = createFunc;
             }
             _destroyAction = destroyAction;
+
+            if (resetInjected && resetAction == null)
+            {
+                ZLog.LogError($"[Pool.ctor] 显式注入的 resetAction 为 null，类型 {typeof(T).Name} 改用工厂里的默认回调。");
+                resetInjected = false;
+            }
+
+            _resetAction = resetInjected ? resetAction : PoolCallbackFactory.Instance.Get<T>();
         }
 
         /// <summary>
@@ -90,10 +150,8 @@ namespace ZFrameWork
                 }
             }
 
-            CallOnGet(obj);
             return obj;
         }
-
         /// <summary>
         /// 将对象归还到池中。
         /// </summary>
@@ -116,7 +174,8 @@ namespace ZFrameWork
                 return;
             }
 
-            CallOnAdd(obj);
+            //归还即置为默认：规则由构造时定下的默认化回调统一负责
+            _resetAction(obj);
 
             _freeObjects.Add(obj);
             _addTimes.Add(GetCurrentTime());
@@ -160,18 +219,6 @@ namespace ZFrameWork
         protected virtual float GetCurrentTime()
         {
             return Environment.TickCount / 1000f;
-        }
-
-        private void CallOnGet(T obj)
-        {
-            if (obj is IPoolable poolable)
-                poolable.OnGet();
-        }
-
-        private void CallOnAdd(T obj)
-        {
-            if (obj is IPoolable poolable)
-                poolable.OnAdd();
         }
     }
 }
