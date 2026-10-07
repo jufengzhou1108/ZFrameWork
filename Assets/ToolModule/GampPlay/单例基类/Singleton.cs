@@ -1,3 +1,5 @@
+using UnityEngine;
+
 /// <summary>
 /// 非 Mono 单例基类：Instance 懒创建，外部不直接 new()。
 /// </summary>

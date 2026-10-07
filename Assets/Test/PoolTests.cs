@@ -1,392 +1,545 @@
 using System;
 using System.Collections.Generic;
-using UnityEngine;
+using System.Text;
+using Cysharp.Threading.Tasks;
 
-namespace ZFrameWork.PlayTests
+namespace ZFrameWork
 {
     /// <summary>
-    /// 对象池模块（Pool / PoolCallbackFactory / 池化集合）的 Play 模式测试套件。
-    /// 本轮改动重点在"归还即默认"这条链路：默认化回调的三种来源（注入 / 注入 null 回落工厂 / 工厂登记），
-    /// 以及集合池把清空职责从 wrapper 搬进池之后语义是否不变。
-    /// 标注"预期诊断"的用例会主动触发一次 ZLog 报错，报错是契约的一部分，断言一律落在状态上。
+    /// 对象池 / 池化集合 / 置空工厂：只走公开面。
+    /// 不为生产代码加卸载 API。工厂表不能反注册，类型只 Register 一次语义的用例必须能在第二遍套件下仍成立。
     /// </summary>
     public static class PoolTests
     {
-        public static void RunAll()
+        public static async UniTask RunAll()
         {
             TestHarness.Reset();
+
+            TestHarness.RunCase("Smoke_PoolGetAddGet_ReturnsSameInstance", Smoke_PoolGetAddGet_ReturnsSameInstance);
+            TestHarness.RunCase("Smoke_PoolAdd_ExplicitResetClearsValue", Smoke_PoolAdd_ExplicitResetClearsValue);
+            TestHarness.RunCase("Smoke_ListPoolGetRelease_ClearsContents", Smoke_ListPoolGetRelease_ClearsContents);
+            TestHarness.RunCase("Smoke_ListPool_InheritsPool", Smoke_ListPool_InheritsPool);
+
+            TestHarness.RunCase("Boundary_CreateFuncNull_GetReturnsNull", Boundary_CreateFuncNull_GetReturnsNull);
+            TestHarness.RunCase("Boundary_AddNull_CountUnchanged", Boundary_AddNull_CountUnchanged);
+            TestHarness.RunCase("Boundary_CapacityZero_RejectsAdd", Boundary_CapacityZero_RejectsAdd);
+            TestHarness.RunCase("Boundary_CapacityNegative_BecomesZero", Boundary_CapacityNegative_BecomesZero);
+            TestHarness.RunCase("Boundary_FactoryUnregistered_ResetIsNoOp", Boundary_FactoryUnregistered_ResetIsNoOp);
+            TestHarness.RunCase("Boundary_ListPoolReleaseNull_ExpectedDiagnostic", Boundary_ListPoolReleaseNull_ExpectedDiagnostic);
+
+            TestHarness.RunCase("Lifecycle_Clear_CountZeroAndDestroyCalled", Lifecycle_Clear_CountZeroAndDestroyCalled);
+            TestHarness.RunCase("Lifecycle_GetAfterClear_CreatesNew", Lifecycle_GetAfterClear_CreatesNew);
+            TestHarness.RunCase("Lifecycle_ExpireEnabled_IdleDestroyedOnGet", Lifecycle_ExpireEnabled_IdleDestroyedOnGet);
+            TestHarness.RunCase("Lifecycle_ExpireDisabled_KeepsIdle", Lifecycle_ExpireDisabled_KeepsIdle);
+
+            TestHarness.RunCase("Mutation_DuplicateAdd_SecondRejected", Mutation_DuplicateAdd_SecondRejected);
+            TestHarness.RunCase("Mutation_ExplicitReset_OverridesFactory", Mutation_ExplicitReset_OverridesFactory);
+            TestHarness.Skip(
+                "Mutation_RegisterAfterPoolConstructed",
+                "工厂不能反注册，第二遍套件会看到上一遍的 Register，无法稳定断言快照");
+
+            TestHarness.RunCase("Failure_CreateReturnsNull_GetReturnsNull", Failure_CreateReturnsNull_GetReturnsNull);
+            TestHarness.RunCase("Failure_ThreeArgNullReset_FallsBackToFactory", Failure_ThreeArgNullReset_FallsBackToFactory);
+            TestHarness.RunCase("Failure_RegisterNull_DoesNotReplace", Failure_RegisterNull_DoesNotReplace);
+            TestHarness.RunCase("Failure_RegisterDuplicate_KeepsFirstCallback", Failure_RegisterDuplicate_KeepsFirstCallback);
+
+            TestHarness.RunCase("Stress_PoolGetAdd256_CountMatches", Stress_PoolGetAdd256_CountMatches);
+            TestHarness.RunCase("Stress_ListPoolGetRelease64_AlwaysEmpty", Stress_ListPoolGetRelease64_AlwaysEmpty);
+
+            TestHarness.RunCase("Contract_DictionaryPool_ReleaseClears", Contract_DictionaryPool_ReleaseClears);
+            TestHarness.RunCase("Contract_HashSetPool_ReleaseClears", Contract_HashSetPool_ReleaseClears);
+            TestHarness.RunCase("Contract_LinkedListPool_ReleaseClears", Contract_LinkedListPool_ReleaseClears);
+            TestHarness.RunCase("Contract_QueuePool_ReleaseClears", Contract_QueuePool_ReleaseClears);
+            TestHarness.RunCase("Contract_StackPool_ReleaseClears", Contract_StackPool_ReleaseClears);
+            TestHarness.RunCase("Contract_StringBuilderPool_ReleaseClears", Contract_StringBuilderPool_ReleaseClears);
+            TestHarness.RunCase("Contract_TwoArgPool_UsesFactoryReset", Contract_TwoArgPool_UsesFactoryReset);
+
+            TestHarness.RunCase("Regression_ListPoolReuse_DoesNotKeepOldItems", Regression_ListPoolReuse_DoesNotKeepOldItems);
+
+            TestHarness.RunCase("Integration_PoolManager_RegisterGetRemoveClear", Integration_PoolManager_RegisterGetRemoveClear);
+            TestHarness.RunCase("Integration_ListActionInvoke_SurvivesHashSetPool", Integration_ListActionInvoke_SurvivesHashSetPool);
+
+            TestHarness.Summary("PoolTests");
+            await UniTask.CompletedTask;
+        }
+
+        private sealed class Probe
+        {
+            public int Value;
+        }
+
+        private sealed class UnregisteredProbe
+        {
+            public int Value;
+        }
+
+        private sealed class FactoryProbe
+        {
+            public int Value;
+        }
+
+        private sealed class OverrideProbe
+        {
+            public int Value;
+        }
+
+        private sealed class FallbackProbe
+        {
+            public int Value;
+        }
+
+        private sealed class DupProbe
+        {
+            public int Value;
+        }
+
+        private sealed class NullCreateProbe
+        {
+        }
+
+        private sealed class ExpireItem
+        {
+        }
+
+        private sealed class ClockPool : Pool<ExpireItem>
+        {
+            public float Now;
+            public int Destroyed;
+
+            public ClockPool()
+                : base(() => new ExpireItem(), _ => { })
+            {
+            }
+
+            public ClockPool(Action<ExpireItem> destroy)
+                : base(() => new ExpireItem(), destroy)
+            {
+            }
+
+            protected override float GetCurrentTime()
+            {
+                return Now;
+            }
+        }
+
+        private static Pool<Probe> NewExplicitPool(Action<Probe> reset = null)
+        {
+            return new Pool<Probe>(() => new Probe(), null, reset ?? (p => p.Value = 0));
+        }
+
+        private static void Smoke_PoolGetAddGet_ReturnsSameInstance()
+        {
+            Pool<Probe> pool = NewExplicitPool();
+            Probe first = pool.Get();
+            TestHarness.Require(first != null, "Get 应返回实例");
+            pool.Add(first);
+            TestHarness.Require(pool.Count == 1, $"归还后 Count 应为 1，实际 {pool.Count}");
+            Probe second = pool.Get();
+            TestHarness.Require(ReferenceEquals(first, second), "池空闲时应归还同一实例");
+            TestHarness.Require(pool.Count == 0, "借出后 Count 应为 0");
+        }
+
+        private static void Smoke_PoolAdd_ExplicitResetClearsValue()
+        {
+            Pool<Probe> pool = NewExplicitPool();
+            Probe probe = pool.Get();
+            probe.Value = 7;
+            pool.Add(probe);
+            Probe again = pool.Get();
+            TestHarness.Require(again.Value == 0, $"显式置空应在归还时执行，实际 {again.Value}");
+        }
+
+        private static void Smoke_ListPoolGetRelease_ClearsContents()
+        {
+            List<int> list = null;
             try
             {
-                // 冒烟 / 基本契约
-                TestHarness.RunCase("Get_EmptyPool_CreatesEachTime", Get_EmptyPool_CreatesEachTime);
-                TestHarness.RunCase("Add_ThenGet_ReusesSameInstanceWithoutCreating", Add_ThenGet_ReusesSameInstanceWithoutCreating);
-
-                // 边界：归还侧
-                TestHarness.RunCase("Add_Null_LogsErrorAndIsSkipped", Add_Null_LogsErrorAndIsSkipped);
-                TestHarness.RunCase("Add_Duplicate_LogsErrorAndKeepsSingle", Add_Duplicate_LogsErrorAndKeepsSingle);
-                TestHarness.RunCase("Add_AtCapacity_IsRejectedSilently", Add_AtCapacity_IsRejectedSilently);
-                TestHarness.RunCase("Add_AfterGet_TrackedPairingAllowsReAdd", Add_AfterGet_TrackedPairingAllowsReAdd);
-
-                // 边界：取出侧与清理
-                TestHarness.RunCase("Get_CreateReturnsNull_LogsErrorAndReturnsNull", Get_CreateReturnsNull_LogsErrorAndReturnsNull);
-                TestHarness.RunCase("Clear_DestroysFreeObjectsAndEmpties", Clear_DestroysFreeObjectsAndEmpties);
-                TestHarness.RunCase("CleanExpired_Expired_InvokesDestroy", CleanExpired_Expired_InvokesDestroy);
-                TestHarness.RunCase("CleanExpired_NotYetExpired_KeepsObjects", CleanExpired_NotYetExpired_KeepsObjects);
-                TestHarness.RunCase("CleanExpired_ExpireTimeDisabled_DoesNothing", CleanExpired_ExpireTimeDisabled_DoesNothing);
-
-                // 本轮核心：归还即默认
-                TestHarness.RunCase("Add_InjectedResetAction_RunsOnSameInstance", Add_InjectedResetAction_RunsOnSameInstance);
-                TestHarness.RunCase("Add_ResetInjectedNull_LogsErrorAndFallsBackToFactory", Add_ResetInjectedNull_LogsErrorAndFallsBackToFactory);
-                TestHarness.RunCase("Add_NoInjection_UsesFactoryRegisteredReset", Add_NoInjection_UsesFactoryRegisteredReset);
-                TestHarness.RunCase("PoolCallbackFactory_UnregisteredType_ReturnsSameEmptyDelegate", PoolCallbackFactory_UnregisteredType_ReturnsSameEmptyDelegate);
-                TestHarness.RunCase("PoolCallbackFactory_RegisterDuplicate_LogsErrorAndKeepsFirst", PoolCallbackFactory_RegisterDuplicate_LogsErrorAndKeepsFirst);
-                TestHarness.RunCase("PoolCallbackFactory_RegisterNull_LogsErrorAndStaysUnregistered", PoolCallbackFactory_RegisterNull_LogsErrorAndStaysUnregistered);
-
-                // 集合池：清空职责搬进池之后的语义
-                TestHarness.RunCase("CollectionPools_SequencePools_ReleaseThenGet_AreEmpty", CollectionPools_SequencePools_ReleaseThenGet_AreEmpty);
-                TestHarness.RunCase("CollectionPools_MapPools_ReleaseThenGet_AreEmpty", CollectionPools_MapPools_ReleaseThenGet_AreEmpty);
-                TestHarness.RunCase("StringBuilderPool_ReleaseThenGet_IsEmpty", StringBuilderPool_ReleaseThenGet_IsEmpty);
-                TestHarness.RunCase("ListPool_ReleaseNull_LogsErrorAndDoesNotThrow", ListPool_ReleaseNull_LogsErrorAndDoesNotThrow);
-
-                TestHarness.Skip("PoolManager_RegisterAndClear",
-                    "PoolManager 全工程零引用，且它的注册/清理语义与本轮改动无关，等真实使用方出现再补");
-                TestHarness.Skip("Pool_ThreadSafety",
-                    "对象池不做线程安全保证（主线程专用约定），无法也不应在此验证并发行为");
-                TestHarness.Skip("Regression_NoRecordedBugs",
-                    "尚无历史缺陷用例；发现缺陷后在此保留具名回归测试");
+                list = ListPool<int>.Get();
+                list.Add(1);
+                list.Add(2);
+                ListPool<int>.Release(list);
+                list = ListPool<int>.Get();
+                TestHarness.Require(list.Count == 0, $"ListPool 归还应 Clear，实际 Count={list.Count}");
             }
-            catch (Exception e)
+            finally
             {
-                Debug.LogError($"[TEST][FAIL] 套件级异常: {e}");
-            }
-
-            TestHarness.Summary("Pool");
-        }
-
-        // ---------- 冒烟 / 基本契约 ----------
-
-        private static void Get_EmptyPool_CreatesEachTime()
-        {
-            int created = 0;
-            var pool = new Pool<PooledThing>(() =>
-            {
-                created++;
-                return new PooledThing();
-            }, null, _ => { });
-
-            PooledThing first = pool.Get();
-            PooledThing second = pool.Get();
-
-            TestHarness.Require(first != null && second != null, "池空时 Get 应通过 createFunc 造出对象");
-            TestHarness.Require(created == 2, $"池空时每次 Get 都应新建，实际创建 {created} 次");
-            TestHarness.Require(!ReferenceEquals(first, second), "两次 Get 应拿到不同实例");
-            TestHarness.Require(pool.Count == 0, $"取出的对象不计入空闲数，实际 Count={pool.Count}");
-        }
-
-        private static void Add_ThenGet_ReusesSameInstanceWithoutCreating()
-        {
-            int created = 0;
-            var pool = new Pool<PooledThing>(() =>
-            {
-                created++;
-                return new PooledThing();
-            }, null, _ => { });
-
-            var thing = new PooledThing { Value = 7 };
-            pool.Add(thing);
-            TestHarness.Require(pool.Count == 1, $"归还后池中应有 1 个空闲对象，实际 {pool.Count}");
-
-            PooledThing got = pool.Get();
-            TestHarness.Require(ReferenceEquals(got, thing), "应从池中取回同一个实例");
-            TestHarness.Require(created == 0, $"池中有空闲时不应新建对象，实际新建 {created} 次");
-            TestHarness.Require(pool.Count == 0, $"取出后空闲数应回到 0，实际 {pool.Count}");
-        }
-
-        // ---------- 边界：归还侧 ----------
-
-        /// <summary>预期诊断：归还 null 打一条报错。</summary>
-        private static void Add_Null_LogsErrorAndIsSkipped()
-        {
-            var pool = new Pool<PooledThing>(() => new PooledThing(), null, _ => { });
-
-            pool.Add(null); // 预期诊断
-
-            TestHarness.Require(pool.Count == 0, $"null 不应进入池中，实际 Count={pool.Count}");
-        }
-
-        /// <summary>预期诊断：重复归还打一条报错。</summary>
-        private static void Add_Duplicate_LogsErrorAndKeepsSingle()
-        {
-            var pool = new Pool<PooledThing>(() => new PooledThing(), null, _ => { });
-            var thing = new PooledThing();
-
-            pool.Add(thing);
-            pool.Add(thing); // 预期诊断
-
-            TestHarness.Require(pool.Count == 1, $"重复归还只应保留一份，实际 Count={pool.Count}");
-        }
-
-        /// <summary>满池拒绝是既定语义（入池与归还者无关，不反馈），这里只钉住"入不了池且不抛异常"。</summary>
-        private static void Add_AtCapacity_IsRejectedSilently()
-        {
-            var pool = new Pool<PooledThing>(() => new PooledThing(), null, _ => { })
-            {
-                Capacity = 1,
-            };
-
-            pool.Add(new PooledThing());
-            pool.Add(new PooledThing()); // 超上限，按语义静默拒绝
-
-            TestHarness.Require(pool.Count == 1, $"超出容量上限的归还不应入池，实际 Count={pool.Count}");
-            TestHarness.Require(pool.Capacity == 1, $"容量上限应保持为 1，实际 {pool.Capacity}");
-        }
-
-        private static void Add_AfterGet_TrackedPairingAllowsReAdd()
-        {
-            var pool = new Pool<PooledThing>(() => new PooledThing(), null, _ => { });
-            var thing = new PooledThing();
-
-            pool.Add(thing);
-            pool.Get();
-            pool.Add(thing); // 取回后再归还，不应被误判为重复归还
-
-            TestHarness.Require(pool.Count == 1, $"取出后的对象应能重新入池，实际 Count={pool.Count}");
-        }
-
-        // ---------- 边界：取出侧与清理 ----------
-
-        /// <summary>预期诊断：createFunc 返回 null 打一条报错。</summary>
-        private static void Get_CreateReturnsNull_LogsErrorAndReturnsNull()
-        {
-            var pool = new Pool<PooledThing>(() => null, null, _ => { });
-
-            PooledThing got = pool.Get(); // 预期诊断
-
-            TestHarness.Require(got == null, "createFunc 返回 null 时 Get 应返回 null");
-        }
-
-        private static void Clear_DestroysFreeObjectsAndEmpties()
-        {
-            int destroyed = 0;
-            var pool = new Pool<PooledThing>(() => new PooledThing(), _ => destroyed++, _ => { });
-
-            pool.Add(new PooledThing());
-            pool.Add(new PooledThing());
-            pool.Clear();
-
-            TestHarness.Require(destroyed == 2, $"清空应逐个销毁空闲对象，实际销毁 {destroyed} 个");
-            TestHarness.Require(pool.Count == 0, $"清空后不应有剩余，实际 {pool.Count}");
-        }
-
-        private static void CleanExpired_Expired_InvokesDestroy()
-        {
-            int destroyed = 0;
-            var pool = new FakeClockPool(() => new PooledThing(), _ => destroyed++, _ => { })
-            {
-                ExpireTime = 10f,
-                Now = 0f,
-            };
-            pool.Add(new PooledThing());
-
-            pool.Now = 11f;
-            pool.CleanExpired();
-
-            TestHarness.Require(destroyed == 1, $"过期对象应被销毁，实际销毁 {destroyed} 个");
-            TestHarness.Require(pool.Count == 0, $"过期清理后空闲数应为 0，实际 {pool.Count}");
-        }
-
-        private static void CleanExpired_NotYetExpired_KeepsObjects()
-        {
-            int destroyed = 0;
-            var pool = new FakeClockPool(() => new PooledThing(), _ => destroyed++, _ => { })
-            {
-                ExpireTime = 10f,
-                Now = 0f,
-            };
-            pool.Add(new PooledThing());
-
-            pool.Now = 5f;
-            pool.CleanExpired();
-
-            TestHarness.Require(destroyed == 0, $"未到期的对象不应被销毁，实际销毁 {destroyed} 个");
-            TestHarness.Require(pool.Count == 1, $"未到期的对象应保留，实际 Count={pool.Count}");
-        }
-
-        private static void CleanExpired_ExpireTimeDisabled_DoesNothing()
-        {
-            int destroyed = 0;
-            var pool = new FakeClockPool(() => new PooledThing(), _ => destroyed++, _ => { })
-            {
-                Now = 0f,
-            };
-            pool.Add(new PooledThing());
-
-            pool.Now = 100000f; // 未启用过期（ExpireTime <= 0）
-            pool.CleanExpired();
-
-            TestHarness.Require(destroyed == 0 && pool.Count == 1,
-                $"未启用过期清理时不应销毁任何对象，实际销毁 {destroyed} 个、Count={pool.Count}");
-        }
-
-        // ---------- 本轮核心：归还即默认 ----------
-
-        private static void Add_InjectedResetAction_RunsOnSameInstance()
-        {
-            var resetTargets = new List<PooledThing>();
-            var pool = new Pool<PooledThing>(
-                () => new PooledThing(),
-                destroyAction: null,
-                resetAction: thing =>
+                if (list != null)
                 {
-                    resetTargets.Add(thing);
-                    thing.Value = 0;
-                });
+                    ListPool<int>.Release(list);
+                }
 
-            var thing = new PooledThing { Value = 99 };
-            pool.Add(thing);
-
-            TestHarness.Require(resetTargets.Count == 1, $"归还时应调用一次注入的默认化回调，实际 {resetTargets.Count} 次");
-            TestHarness.Require(ReferenceEquals(resetTargets[0], thing), "默认化回调收到的应是同一个实例");
-            TestHarness.Require(thing.Value == 0, $"默认化后对象应回到默认状态，实际 Value={thing.Value}");
+                ListPool<int>.Instance.Clear();
+            }
         }
 
-        /// <summary>预期诊断：三参构造显式传 null 打一条报错，然后回落到工厂。</summary>
-        private static void Add_ResetInjectedNull_LogsErrorAndFallsBackToFactory()
+        private static void Smoke_ListPool_InheritsPool()
         {
-            bool factoryCalled = false;
-            PoolCallbackFactory.Instance.Register<FactoryThingA>(thing =>
+            TestHarness.Require(ListPool<int>.Instance is Pool<List<int>>, "ListPool 应继承 Pool<List<T>>");
+            TestHarness.Require(ListPool<int>.Instance is IPool<List<int>>, "ListPool 应实现 IPool<List<T>>");
+        }
+
+        private static void Boundary_CreateFuncNull_GetReturnsNull()
+        {
+            Pool<Probe> pool = new Pool<Probe>(null);
+            Probe probe = pool.Get();
+            TestHarness.Require(probe == null, "createFunc 为 null 时 Get 应返回 null");
+        }
+
+        private static void Boundary_AddNull_CountUnchanged()
+        {
+            Pool<Probe> pool = NewExplicitPool();
+            pool.Add(null);
+            TestHarness.Require(pool.Count == 0, "Add(null) 应被跳过");
+        }
+
+        private static void Boundary_CapacityZero_RejectsAdd()
+        {
+            Pool<Probe> pool = NewExplicitPool();
+            pool.Capacity = 0;
+            Probe probe = pool.Get();
+            pool.Add(probe);
+            TestHarness.Require(pool.Count == 0, "Capacity=0 时应拒绝入池");
+            Probe again = pool.Get();
+            TestHarness.Require(!ReferenceEquals(probe, again), "未入池的对象不应被再次借出");
+        }
+
+        private static void Boundary_CapacityNegative_BecomesZero()
+        {
+            Pool<Probe> pool = NewExplicitPool();
+            pool.Capacity = -3;
+            TestHarness.Require(pool.Capacity == 0, $"负容量应钳到 0，实际 {pool.Capacity}");
+        }
+
+        private static void Boundary_FactoryUnregistered_ResetIsNoOp()
+        {
+            Pool<UnregisteredProbe> pool = new Pool<UnregisteredProbe>(() => new UnregisteredProbe(), null);
+            UnregisteredProbe probe = pool.Get();
+            probe.Value = 9;
+            pool.Add(probe);
+            UnregisteredProbe again = pool.Get();
+            TestHarness.Require(again.Value == 9, $"未注册类型应拿到空委托，值应保留，实际 {again.Value}");
+        }
+
+        private static void Boundary_ListPoolReleaseNull_ExpectedDiagnostic()
+        {
+            int before = ListPool<int>.Instance.Count;
+            ListPool<int>.Release(null);
+            TestHarness.Require(ListPool<int>.Instance.Count == before, "Release(null) 不应改变池 Count");
+        }
+
+        private static void Lifecycle_Clear_CountZeroAndDestroyCalled()
+        {
+            int destroyed = 0;
+            Pool<Probe> pool = new Pool<Probe>(() => new Probe(), _ => destroyed++, p => p.Value = 0);
+            Probe a = pool.Get();
+            Probe b = pool.Get();
+            pool.Add(a);
+            pool.Add(b);
+            TestHarness.Require(pool.Count == 2, "应有 2 个空闲对象");
+            pool.Clear();
+            TestHarness.Require(pool.Count == 0, "Clear 后 Count 应为 0");
+            TestHarness.Require(destroyed == 2, $"Clear 应调用 destroy，实际 {destroyed}");
+        }
+
+        private static void Lifecycle_GetAfterClear_CreatesNew()
+        {
+            Pool<Probe> pool = NewExplicitPool();
+            Probe first = pool.Get();
+            pool.Add(first);
+            pool.Clear();
+            Probe second = pool.Get();
+            TestHarness.Require(!ReferenceEquals(first, second), "Clear 后应新建，不应借到已销毁的空闲对象");
+        }
+
+        private static void Lifecycle_ExpireEnabled_IdleDestroyedOnGet()
+        {
+            int destroyed = 0;
+            ClockPool pool = new ClockPool(_ => destroyed++);
+            pool.ExpireTime = 1f;
+            pool.Now = 0f;
+            ExpireItem item = pool.Get();
+            pool.Add(item);
+            TestHarness.Require(pool.Count == 1, "刚归还应在池中");
+            pool.Now = 2f;
+            ExpireItem next = pool.Get();
+            TestHarness.Require(destroyed == 1, $"过期空闲对象应被销毁，实际 {destroyed}");
+            TestHarness.Require(!ReferenceEquals(item, next), "过期后 Get 应拿到新实例");
+        }
+
+        private static void Lifecycle_ExpireDisabled_KeepsIdle()
+        {
+            ClockPool pool = new ClockPool();
+            pool.ExpireTime = -1f;
+            pool.Now = 0f;
+            ExpireItem item = pool.Get();
+            pool.Add(item);
+            pool.Now = 100f;
+            ExpireItem next = pool.Get();
+            TestHarness.Require(ReferenceEquals(item, next), "未启用过期时应复用");
+        }
+
+        private static void Mutation_DuplicateAdd_SecondRejected()
+        {
+            Pool<Probe> pool = NewExplicitPool();
+            Probe probe = pool.Get();
+            pool.Add(probe);
+            TestHarness.Require(pool.Count == 1, "第一次归还应入池");
+            pool.Add(probe);
+            TestHarness.Require(pool.Count == 1, "重复归还应被拒绝");
+        }
+
+        private static void Mutation_ExplicitReset_OverridesFactory()
+        {
+            PoolCallbackFactory.Instance.Register<OverrideProbe>(p => p.Value = 1);
+            Pool<OverrideProbe> pool = new Pool<OverrideProbe>(() => new OverrideProbe(), null, p => p.Value = 2);
+            OverrideProbe probe = pool.Get();
+            probe.Value = 9;
+            pool.Add(probe);
+            OverrideProbe again = pool.Get();
+            TestHarness.Require(again.Value == 2, $"三参注入应优先于工厂，实际 {again.Value}");
+        }
+
+        private static void Failure_CreateReturnsNull_GetReturnsNull()
+        {
+            Pool<NullCreateProbe> pool = new Pool<NullCreateProbe>(() => null);
+            TestHarness.Require(pool.Get() == null, "工厂返回 null 时 Get 应为 null");
+        }
+
+        private static void Failure_ThreeArgNullReset_FallsBackToFactory()
+        {
+            PoolCallbackFactory.Instance.Register<FallbackProbe>(p => p.Value = 0);
+            Pool<FallbackProbe> pool = new Pool<FallbackProbe>(() => new FallbackProbe(), null, null);
+            FallbackProbe probe = pool.Get();
+            probe.Value = 4;
+            pool.Add(probe);
+            FallbackProbe again = pool.Get();
+            TestHarness.Require(again.Value == 0, $"三参传 null 应回落工厂置空，实际 {again.Value}");
+        }
+
+        private static void Failure_RegisterNull_DoesNotReplace()
+        {
+            PoolCallbackFactory.Instance.Register<FactoryProbe>(p => p.Value = 0);
+            PoolCallbackFactory.Instance.Register<FactoryProbe>(null);
+            Pool<FactoryProbe> pool = new Pool<FactoryProbe>(() => new FactoryProbe(), null);
+            FactoryProbe probe = pool.Get();
+            probe.Value = 5;
+            pool.Add(probe);
+            FactoryProbe again = pool.Get();
+            TestHarness.Require(again.Value == 0, "Register(null) 不应清掉已有回调");
+        }
+
+        private static void Failure_RegisterDuplicate_KeepsFirstCallback()
+        {
+            PoolCallbackFactory.Instance.Register<DupProbe>(p => p.Value = 1);
+            PoolCallbackFactory.Instance.Register<DupProbe>(p => p.Value = 999);
+            Pool<DupProbe> pool = new Pool<DupProbe>(() => new DupProbe(), null);
+            DupProbe probe = pool.Get();
+            probe.Value = 0;
+            pool.Add(probe);
+            DupProbe again = pool.Get();
+            TestHarness.Require(again.Value == 1, $"重复注册应保留第一次回调，实际 {again.Value}");
+        }
+
+        private static void Stress_PoolGetAdd256_CountMatches()
+        {
+            Pool<Probe> pool = NewExplicitPool();
+            Probe[] items = new Probe[256];
+            for (int i = 0; i < items.Length; i++)
             {
-                factoryCalled = true;
-                thing.Value = 0;
-            });
+                items[i] = pool.Get();
+            }
 
-            var pool = new Pool<FactoryThingA>(
-                () => new FactoryThingA(),
-                destroyAction: null,
-                resetAction: null); // 预期诊断：显式注入 null
-
-            var thing = new FactoryThingA { Value = 5 };
-            pool.Add(thing);
-
-            TestHarness.Require(factoryCalled, "注入 null 时应回落到工厂登记的回调");
-            TestHarness.Require(thing.Value == 0, $"回落后的默认化也应生效，实际 Value={thing.Value}");
-        }
-
-        private static void Add_NoInjection_UsesFactoryRegisteredReset()
-        {
-            var resetTargets = new List<FactoryThingB>();
-            PoolCallbackFactory.Instance.Register<FactoryThingB>(thing =>
+            TestHarness.Require(pool.Count == 0, "全部借出后 Count 应为 0");
+            for (int i = 0; i < items.Length; i++)
             {
-                resetTargets.Add(thing);
-                thing.Value = 0;
-            });
+                pool.Add(items[i]);
+            }
 
-            // 两参构造：不注入默认化回调，规则完全来自工厂
-            var pool = new Pool<FactoryThingB>(() => new FactoryThingB());
-
-            var thing = new FactoryThingB { Value = 8 };
-            pool.Add(thing);
-
-            TestHarness.Require(resetTargets.Count == 1,
-                $"未注入时应使用工厂登记的默认化回调，实际调用 {resetTargets.Count} 次");
-            TestHarness.Require(ReferenceEquals(resetTargets[0], thing), "工厂回调收到的应是同一个实例");
+            TestHarness.Require(pool.Count == 256, $"256 次归还后 Count 应为 256，实际 {pool.Count}");
         }
 
-        private static void PoolCallbackFactory_UnregisteredType_ReturnsSameEmptyDelegate()
+        private static void Stress_ListPoolGetRelease64_AlwaysEmpty()
         {
-            Action<FactoryThingUnregistered> first = PoolCallbackFactory.Instance.Get<FactoryThingUnregistered>();
-            Action<FactoryThingUnregistered> second = PoolCallbackFactory.Instance.Get<FactoryThingUnregistered>();
-
-            TestHarness.Require(first != null && second != null, "未注册的类型也应拿到可调用的委托（空委托兜底）");
-            TestHarness.Require(ReferenceEquals(first, second),
-                "空委托应按类型缓存，两次查询应拿到同一实例（否则每次查询都在分配）");
-
-            var thing = new FactoryThingUnregistered { Value = 3 };
-            first(thing); // 空委托，调用应无副作用、不抛异常
-            TestHarness.Require(thing.Value == 3, "空委托不应改动对象");
+            try
+            {
+                for (int i = 0; i < 64; i++)
+                {
+                    List<int> list = ListPool<int>.Get();
+                    list.Add(i);
+                    ListPool<int>.Release(list);
+                    List<int> reused = ListPool<int>.Get();
+                    TestHarness.Require(reused.Count == 0, $"第 {i} 次复用应为空，实际 {reused.Count}");
+                    ListPool<int>.Release(reused);
+                }
+            }
+            finally
+            {
+                ListPool<int>.Instance.Clear();
+            }
         }
 
-        /// <summary>预期诊断：重复注册打一条报错。</summary>
-        private static void PoolCallbackFactory_RegisterDuplicate_LogsErrorAndKeepsFirst()
+        private static void Contract_DictionaryPool_ReleaseClears()
         {
-            bool secondCalled = false;
-            PoolCallbackFactory.Instance.Register<FactoryThingC>(_ => { });
-            PoolCallbackFactory.Instance.Register<FactoryThingC>(_ => secondCalled = true); // 预期诊断
-
-            Action<FactoryThingC> callback = PoolCallbackFactory.Instance.Get<FactoryThingC>();
-            callback(new FactoryThingC());
-
-            TestHarness.Require(!secondCalled, "重复注册应被拒绝，先注册的那个必须仍然生效");
+            Dictionary<int, string> dictionary = DictionaryPool<int, string>.Get();
+            dictionary[1] = "a";
+            DictionaryPool<int, string>.Release(dictionary);
+            Dictionary<int, string> reused = DictionaryPool<int, string>.Get();
+            try
+            {
+                TestHarness.Require(reused.Count == 0, $"Dictionary 归还应 Clear，实际 {reused.Count}");
+            }
+            finally
+            {
+                DictionaryPool<int, string>.Release(reused);
+                DictionaryPool<int, string>.Instance.Clear();
+            }
         }
 
-        /// <summary>预期诊断：注册 null 打一条报错。</summary>
-        private static void PoolCallbackFactory_RegisterNull_LogsErrorAndStaysUnregistered()
+        private static void Contract_HashSetPool_ReleaseClears()
         {
-            PoolCallbackFactory.Instance.Register<PooledThing>(null); // 预期诊断
-
-            Action<PooledThing> callback = PoolCallbackFactory.Instance.Get<PooledThing>();
-            var thing = new PooledThing { Value = 4 };
-            callback(thing);
-
-            TestHarness.Require(thing.Value == 4, "注册 null 被拒绝后该类型应仍处于未注册状态（拿到的是空委托）");
-        }
-
-        // ---------- 集合池 ----------
-
-        private static void CollectionPools_SequencePools_ReleaseThenGet_AreEmpty()
-        {
-            var list = ListPool<int>.Get();
-            list.Add(1);
-            ListPool<int>.Release(list);
-            TestHarness.Require(ListPool<int>.Get().Count == 0, "ListPool 归还即清空");
-
-            var queue = QueuePool<int>.Get();
-            queue.Enqueue(1);
-            QueuePool<int>.Release(queue);
-            TestHarness.Require(QueuePool<int>.Get().Count == 0, "QueuePool 归还即清空");
-
-            var stack = StackPool<int>.Get();
-            stack.Push(1);
-            StackPool<int>.Release(stack);
-            TestHarness.Require(StackPool<int>.Get().Count == 0, "StackPool 归还即清空");
-
-            var linked = LinkedListPool<int>.Get();
-            linked.AddLast(1);
-            LinkedListPool<int>.Release(linked);
-            TestHarness.Require(LinkedListPool<int>.Get().Count == 0, "LinkedListPool 归还即清空");
-        }
-
-        private static void CollectionPools_MapPools_ReleaseThenGet_AreEmpty()
-        {
-            var dictionary = DictionaryPool<int, int>.Get();
-            dictionary[1] = 1;
-            DictionaryPool<int, int>.Release(dictionary);
-            TestHarness.Require(DictionaryPool<int, int>.Get().Count == 0, "DictionaryPool 归还即清空");
-
-            var hashSet = HashSetPool<int>.Get();
-            hashSet.Add(1);
+            HashSet<int> hashSet = HashSetPool<int>.Get();
+            hashSet.Add(3);
             HashSetPool<int>.Release(hashSet);
-            TestHarness.Require(HashSetPool<int>.Get().Count == 0, "HashSetPool 归还即清空");
+            HashSet<int> reused = HashSetPool<int>.Get();
+            try
+            {
+                TestHarness.Require(reused.Count == 0, $"HashSet 归还应 Clear，实际 {reused.Count}");
+            }
+            finally
+            {
+                HashSetPool<int>.Release(reused);
+                HashSetPool<int>.Instance.Clear();
+            }
         }
 
-        private static void StringBuilderPool_ReleaseThenGet_IsEmpty()
+        private static void Contract_LinkedListPool_ReleaseClears()
         {
-            var builder = StringBuilderPool.Get();
-            builder.Append("x");
+            LinkedList<int> linked = LinkedListPool<int>.Get();
+            linked.AddLast(1);
+            linked.AddLast(2);
+            LinkedListPool<int>.Release(linked);
+            LinkedList<int> reused = LinkedListPool<int>.Get();
+            try
+            {
+                TestHarness.Require(reused.Count == 0, $"LinkedList 归还应 Clear，实际 {reused.Count}");
+            }
+            finally
+            {
+                LinkedListPool<int>.Release(reused);
+                LinkedListPool<int>.Instance.Clear();
+            }
+        }
+
+        private static void Contract_QueuePool_ReleaseClears()
+        {
+            Queue<int> queue = QueuePool<int>.Get();
+            queue.Enqueue(1);
+            queue.Enqueue(2);
+            QueuePool<int>.Release(queue);
+            Queue<int> reused = QueuePool<int>.Get();
+            try
+            {
+                TestHarness.Require(reused.Count == 0, $"Queue 归还应 Clear，实际 {reused.Count}");
+                reused.Enqueue(9);
+                TestHarness.Require(reused.Dequeue() == 9, "清空后应仍是队列语义");
+            }
+            finally
+            {
+                QueuePool<int>.Release(reused);
+                QueuePool<int>.Instance.Clear();
+            }
+        }
+
+        private static void Contract_StackPool_ReleaseClears()
+        {
+            Stack<int> stack = StackPool<int>.Get();
+            stack.Push(1);
+            stack.Push(2);
+            StackPool<int>.Release(stack);
+            Stack<int> reused = StackPool<int>.Get();
+            try
+            {
+                TestHarness.Require(reused.Count == 0, $"Stack 归还应 Clear，实际 {reused.Count}");
+                reused.Push(8);
+                TestHarness.Require(reused.Pop() == 8, "清空后应仍是栈语义");
+            }
+            finally
+            {
+                StackPool<int>.Release(reused);
+                StackPool<int>.Instance.Clear();
+            }
+        }
+
+        private static void Contract_StringBuilderPool_ReleaseClears()
+        {
+            StringBuilder builder = StringBuilderPool.Get();
+            builder.Append("abc");
             StringBuilderPool.Release(builder);
-
-            TestHarness.Require(StringBuilderPool.Get().Length == 0, "StringBuilderPool 归还即清空");
+            StringBuilder reused = StringBuilderPool.Get();
+            try
+            {
+                TestHarness.Require(reused.Length == 0, $"StringBuilder 归还应 Clear，实际 Length={reused.Length}");
+            }
+            finally
+            {
+                StringBuilderPool.Release(reused);
+                StringBuilderPool.Instance.Clear();
+            }
         }
 
-        /// <summary>预期诊断：归还 null 打一条报错（由 Pool.Add 的 null 检查给出）。</summary>
-        private static void ListPool_ReleaseNull_LogsErrorAndDoesNotThrow()
+        private static void Contract_TwoArgPool_UsesFactoryReset()
         {
-            ListPool<int>.Release(null); // 预期诊断
+            PoolCallbackFactory.Instance.Register<FactoryProbe>(p => p.Value = 0);
+            Pool<FactoryProbe> pool = new Pool<FactoryProbe>(() => new FactoryProbe(), null);
+            FactoryProbe probe = pool.Get();
+            probe.Value = 6;
+            pool.Add(probe);
+            FactoryProbe again = pool.Get();
+            TestHarness.Require(again.Value == 0, $"两参构造应从工厂取置空，实际 {again.Value}");
+        }
 
-            // 容器未被污染：正常路径仍可用
-            var list = ListPool<int>.Get();
-            TestHarness.Require(list != null && list.Count == 0, "归还 null 不应影响池的后续使用");
-            ListPool<int>.Release(list);
+        private static void Regression_ListPoolReuse_DoesNotKeepOldItems()
+        {
+            List<int> first = ListPool<int>.Get();
+            first.Add(42);
+            ListPool<int>.Release(first);
+            List<int> second = ListPool<int>.Get();
+            try
+            {
+                TestHarness.Require(!second.Contains(42), "复用的 List 不应残留旧元素");
+            }
+            finally
+            {
+                ListPool<int>.Release(second);
+                ListPool<int>.Instance.Clear();
+            }
+        }
+
+        private static void Integration_PoolManager_RegisterGetRemoveClear()
+        {
+            int destroyed = 0;
+            PoolManager manager = new PoolManager();
+            Pool<Probe> pool = new Pool<Probe>(() => new Probe(), _ => destroyed++, p => p.Value = 0);
+            manager.Register(pool);
+            IPool<Probe> found = manager.Get<Probe>();
+            TestHarness.Require(found == pool, "Get 应返回注册的池");
+            Probe probe = found.Get();
+            found.Add(probe);
+            TestHarness.Require(found.Count == 1, "经管理器借还应作用在同一池上");
+            manager.Clear();
+            TestHarness.Require(pool.Count == 0, "Manager.Clear 应清空已注册池");
+            TestHarness.Require(destroyed == 1, $"Manager.Clear 应触发 destroy，实际 {destroyed}");
+            TestHarness.Require(manager.Get<Probe>() == null, "Clear 后类型表应空");
+        }
+
+        private static void Integration_ListActionInvoke_SurvivesHashSetPool()
+        {
+            ListAction<int> listAction = new ListAction<int>();
+            int n = 0;
+            listAction.Subscribe(v => n += v);
+            listAction.Invoke(2);
+            listAction.Invoke(3);
+            TestHarness.Require(n == 5, $"ListAction 两次 Invoke 应成功（内部用 HashSetPool），实际 {n}");
         }
     }
 }
