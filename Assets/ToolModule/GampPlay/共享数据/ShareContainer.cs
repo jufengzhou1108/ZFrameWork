@@ -1,19 +1,13 @@
-using System;
 using System.Collections.Generic;
 
 namespace ZFrameWork
 {
     public sealed class ShareContainer
     {
-        private readonly Dictionary<string, object> _items = new();
+        private readonly Dictionary<int, object> _items = new();
 
-        public void Set<T>(string key, T model) where T : class
+        public void Set<T>(int key, T model) where T : class
         {
-            if (string.IsNullOrEmpty(key))
-            {
-                ZLog.LogError($"[{GetType().Name}] 放入失败，key 不能为空。");
-                return;
-            }
             if (model == null)
             {
                 ZLog.LogError($"[{GetType().Name}] 放入失败，不能放入空引用，key：{key}");
@@ -29,13 +23,8 @@ namespace ZFrameWork
             _items.Add(key, model);
         }
 
-        public T Get<T>(string key) where T : class
+        public T Get<T>(int key) where T : class
         {
-            if (string.IsNullOrEmpty(key))
-            {
-                ZLog.LogError($"[{GetType().Name}] 获取失败，key 不能为空。");
-                return null;
-            }
             if (!_items.TryGetValue(key, out object stored))
             {
                 ZLog.LogError($"[{GetType().Name}] 获取失败，key 未登记：{key}");
@@ -51,13 +40,8 @@ namespace ZFrameWork
             return null;
         }
 
-        public void Delete(string key)
+        public void Delete(int key)
         {
-            if (string.IsNullOrEmpty(key))
-            {
-                ZLog.LogError($"[{GetType().Name}] 删除失败，key 不能为空。");
-                return;
-            }
             if (!_items.Remove(key))
             {
                 // 删不存在的项意味着调用方的前提被破坏（重复删除，或从未登记），按约定报错提醒

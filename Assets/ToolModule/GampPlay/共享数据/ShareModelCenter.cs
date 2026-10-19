@@ -4,17 +4,17 @@ namespace ZFrameWork
     {
         private readonly ShareContainer _container = new();
 
-        public void Set<T>(string key, T model) where T : class
+        public void Set<T>(int key, T model) where T : class
         {
             _container.Set(key, model);
         }
 
-        public T Get<T>(string key) where T : class
+        public T Get<T>(int key) where T : class
         {
             return _container.Get<T>(key);
         }
 
-        public void Delete(string key)
+        public void Delete(int key)
         {
             _container.Delete(key);
         }
