@@ -2,10 +2,6 @@ using System;
 using UnityEngine;
 
 
-// 公共 Mono
-// 1.为没有 MonoBehaviour 的类提供协程宿主
-// 2.每帧驱动注册进来的更新回调
-// 3.常驻不随场景销毁（继承自 SingletonAutoMono）
 namespace ZFrameWork
 {
 

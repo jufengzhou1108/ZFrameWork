@@ -5,11 +5,6 @@ using UnityEngine;
 
 namespace ZFrameWork
 {
-    /// <summary>
-    /// 业务侧资源访问组。每个 key 在组内只持有一份引用。
-    /// 显式调用 ReleaseAll 是正常路径；
-    /// 忘记释放时由析构函数向 AddressablesHelper 登记孤儿账本，主线程代为释放。
-    /// </summary>
     public sealed class AddressablesGroup : IResourceGroup
     {
         private readonly AddressablesLoadManager _manager;
@@ -22,7 +17,6 @@ namespace ZFrameWork
             AddressablesHelper.EnsureFlushHook();
         }
 
-        /// <summary>业务忘记释放时兜底：向 Helper 登记账本快照，由主线程代为释放。</summary>
         ~AddressablesGroup()
         {
             // ReleaseAll 已归还集合并置空，这里即为空账，直接返回
@@ -34,7 +28,6 @@ namespace ZFrameWork
             AddressablesHelper.RegisterOrphan(_manager, keys);
         }
 
-        /// <summary>同步加载资源，组内重复访问不会增加引用计数。</summary>
         public T Load<T>(string path, string key) where T : UnityEngine.Object
         {
             string managedKey = _manager.BuildKey<T>(key);
@@ -52,7 +45,6 @@ namespace ZFrameWork
             return asset;
         }
 
-        /// <summary>异步加载资源，组内重复访问只直接获取已加载资源。</summary>
         public async Task<T> LoadAsync<T>(string path, string key) where T : UnityEngine.Object
         {
             string managedKey = _manager.BuildKey<T>(key);
@@ -72,13 +64,11 @@ namespace ZFrameWork
             return asset;
         }
 
-        /// <summary>释放组内指定类型和 key 的资源引用。</summary>
         public void Release<T>(string key) where T : UnityEngine.Object
         {
             Release(key);
         }
 
-        /// <summary>按 key 释放单个资源，适用于调用方不保留资源类型的场景。</summary>
         public void Release(string key)
         {
             if (_managedKeys == null || string.IsNullOrEmpty(key))
@@ -100,9 +90,6 @@ namespace ZFrameWork
             ListPool<string>.Release(matchingKeys);
         }
 
-        /// <summary>
-        /// 释放组内全部资源，并归还池化集合。访问组本身保持可用，再次加载会重新取用集合。
-        /// </summary>
         public void ReleaseAll()
         {
             if (_managedKeys == null)

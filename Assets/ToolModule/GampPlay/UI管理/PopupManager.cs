@@ -6,12 +6,6 @@ using Object = UnityEngine.Object;
 
 namespace ZFrameWork
 {
-    /// <summary>
-    /// 弹窗管理器。栈管理 PopupUINode（界面、加载任务、期望状态），
-    /// 只提供 PushView（显示并压栈）、PopView（关闭栈顶）、Clear（关闭所有）。
-    /// 重复与乱序处理与单例 UI 一致：UINode 同步代表去重、复用加载任务、按目标状态仲裁。
-    /// 模态拦截由 RaycastMask 实现，始终垫在栈顶弹窗之下。
-    /// </summary>
     public sealed class PopupManager : UIManager<PopupManager>
     {
         private readonly LinkedList<UINode> _stack = new();
@@ -20,7 +14,7 @@ namespace ZFrameWork
 
         protected override void OnInitialize()
         {
-            // 显式带上 CanvasRenderer：RaycastMask 是 Graphic，缺了它射线判定会退化（详见 RaycastMask 注释）
+            // 显式带上 CanvasRenderer：RaycastMask 是 Graphic，缺了它射线判定会退化
             GameObject maskObject = new GameObject("RaycastMask", typeof(RectTransform), typeof(CanvasRenderer));
             RectTransform rect = (RectTransform)maskObject.transform;
             rect.SetParent(Canvas.transform, false);
@@ -32,10 +26,6 @@ namespace ZFrameWork
             maskObject.SetActive(false);
         }
 
-        /// <summary>
-        /// 压入弹窗：异步加载，数据在 Open 之前注入，完成后显示。
-        /// 已在栈中（含加载中）时拒绝重复请求。
-        /// </summary>
         public bool Push<TView, TData>(TData data) where TView : PopupBase<TData>
         {
             if (!EnsureAlive())
@@ -59,7 +49,6 @@ namespace ZFrameWork
             return true;
         }
 
-        /// <summary>关闭栈顶弹窗。</summary>
         public void PopView()
         {
             if (!EnsureAlive())
@@ -73,7 +62,6 @@ namespace ZFrameWork
             SyncRaycastMask();
         }
 
-        /// <summary>关闭所有弹窗。单例 UI 发生界面切换时由 SingletonUIManager 调用。</summary>
         public void Clear()
         {
             if (!EnsureAlive())
@@ -179,7 +167,6 @@ namespace ZFrameWork
             node.Path = null;
         }
 
-        /// <summary>同步射线遮罩：垫在栈顶弹窗之下（兄弟索引 n-1），栈空时隐藏。</summary>
         private void SyncRaycastMask()
         {
             // Unity 伪 null：物体销毁后引用仍在，直接使用会抛 MissingReferenceException

@@ -1,8 +1,5 @@
 using UnityEngine;
 
-/// <summary>
-/// Mono 单例基类：首次访问时自动创建物体，并置为 DontDestroyOnLoad 常驻。
-/// </summary>
 namespace ZFrameWork
 {
 

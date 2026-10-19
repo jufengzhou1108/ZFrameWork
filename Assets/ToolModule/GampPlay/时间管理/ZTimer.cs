@@ -7,14 +7,8 @@ using Cysharp.Threading.Tasks;
 namespace ZFrameWork
 {
 
-/// <summary>
-/// 定时任务的核心（对外由 TimeManager 单例封装持有）。
-/// 单时基（Stopwatch）+ 单循环（UniTask 间隔 20ms）驱动全部任务；任务存 List、删除用交换删除法、任务对象走池。
-/// 主循环按游戏时间推进（Time.deltaTime），与 TimeManager 的 timeScale 暂停天然一致。
-/// </summary>
 public class ZTimer
 {
-    /// <summary>主循环推进间隔（毫秒）。</summary>
     private const int LoopIntervalMilliseconds = 20;
 
     private readonly Stopwatch stopwatch = new Stopwatch();
@@ -26,10 +20,8 @@ public class ZTimer
     private bool isGlobalPaused;
     private CancellationTokenSource loopCts;
 
-    /// <summary>当前时间（毫秒，Stopwatch 时基；整体暂停期间不前进）。</summary>
     public long CurrentTime => stopwatch.ElapsedMilliseconds;
 
-    /// <summary>初始化：开始计时并启动主循环（幂等）。外部希望提前开始计时可以主动调用；添加任务时也会自动调用。</summary>
     public void Init()
     {
         if (isInitialized)
@@ -43,15 +35,6 @@ public class ZTimer
         MainLoop(loopCts.Token).Forget();
     }
 
-    /// <summary>
-    /// 添加循环任务。
-    /// </summary>
-    /// <param name="interval">间隔毫秒，必须大于 0。</param>
-    /// <param name="action">任务委托，不能为 null。</param>
-    /// <param name="count">执行次数；&lt;= 0 表示无限次。</param>
-    /// <param name="immediately">是否立即执行一次（默认 true）；立即执行会作废 firstDelay。</param>
-    /// <param name="firstDelay">首次间隔毫秒；&lt;= 0 表示没有。只有 immediately 为 false 时才有意义。</param>
-    /// <returns>任务访问器；入参非法时返回 null。</returns>
     public TimeTaskEntry AddTask(int interval, Action action, int count = 0, bool immediately = true, int firstDelay = -1)
     {
         if (interval <= 0)
@@ -104,7 +87,6 @@ public class ZTimer
         return entry;
     }
 
-    /// <summary>整体暂停：停住时基并停止推进任务；恢复后不补帧。</summary>
     public void PauseAll()
     {
         if (isGlobalPaused)
@@ -116,7 +98,6 @@ public class ZTimer
         stopwatch.Stop();
     }
 
-    /// <summary>整体继续。</summary>
     public void ResumeAll()
     {
         if (!isGlobalPaused)
@@ -128,7 +109,6 @@ public class ZTimer
         stopwatch.Start();
     }
 
-    /// <summary>删除任务（由访问器调用）。</summary>
     internal void RemoveTask(TimeTaskEntry entry)
     {
         TimeTask task = entry.Task;
@@ -150,7 +130,6 @@ public class ZTimer
         RemoveAt(index);
     }
 
-    /// <summary>暂停任务（由访问器调用）。</summary>
     internal void PauseTask(TimeTaskEntry entry)
     {
         if (entry.Task == null)
@@ -162,7 +141,6 @@ public class ZTimer
         entry.Task.Pause(CurrentTime);
     }
 
-    /// <summary>继续任务（由访问器调用）。</summary>
     internal void ResumeTask(TimeTaskEntry entry)
     {
         if (entry.Task == null)
@@ -174,7 +152,6 @@ public class ZTimer
         entry.Task.Resume(CurrentTime);
     }
 
-    /// <summary>主循环：每 20ms 醒来一次处理任务列表。</summary>
     private async UniTaskVoid MainLoop(CancellationToken ct)
     {
         try
@@ -193,7 +170,6 @@ public class ZTimer
         }
         catch (OperationCanceledException)
         {
-            //停止时正常退出
         }
         catch (Exception e)
         {
@@ -201,7 +177,6 @@ public class ZTimer
         }
     }
 
-    /// <summary>处理一轮：先清理次数已耗尽的任务，再按到期时刻推进其余任务。</summary>
     private void ProcessTasks()
     {
         //循环执行前检测：次数为 0 的任务在这里销毁（倒序遍历，配合交换删除不会跳过元素）
@@ -229,7 +204,6 @@ public class ZTimer
         }
     }
 
-    /// <summary>交换删除法：把尾元素挪到被删位置再 RemoveAt 末尾，O(1)；随后解绑访问器、清字典项、归还池。</summary>
     private void RemoveAt(int index)
     {
         TimeTask task = tasks[index];

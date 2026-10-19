@@ -3,7 +3,6 @@ using System.Collections.Generic;
 
 namespace ZFrameWork
 {
-    /// <summary>基于 List 的泛型 Action 封装。</summary>
     public class ListAction<T>
     {
         private readonly List<Action<T>> _list = new();
@@ -83,7 +82,6 @@ namespace ZFrameWork
         }
     }
 
-    /// <summary>无参数回调的 Action 封装。</summary>
     public class ListAction
     {
         private readonly List<Action> _list = new();

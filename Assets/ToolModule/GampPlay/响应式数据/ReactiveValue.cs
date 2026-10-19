@@ -2,7 +2,6 @@ using System;
 
 namespace ZFrameWork
 {
-    /// <summary>在值发生变化时向订阅者传播当前值。</summary>
     public sealed class ReactiveValue<T>
     {
         private readonly ListAction<T> _callbacks = new();

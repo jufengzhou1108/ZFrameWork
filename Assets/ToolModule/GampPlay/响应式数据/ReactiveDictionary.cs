@@ -3,7 +3,6 @@ using System.Collections.Generic;
 
 namespace ZFrameWork
 {
-    /// <summary>在内容变化后向订阅者传播当前只读字典。</summary>
     public sealed class ReactiveDictionary<TKey, TValue>
     {
         private readonly Dictionary<TKey, TValue> _items;

@@ -4,11 +4,6 @@ using UnityEngine;
 
 namespace ZFrameWork
 {
-    /// <summary>
-    /// UI 界面生命周期基类。四种操作 Open/Show/Hide/Close 由管理器驱动，
-    /// 子类重写 On 系列方法扩展行为；On 函数在 Open/Show 之后、Hide/Close 之前调用。
-    /// 资源通过资源组加载，界面关闭时统一释放。
-    /// </summary>
     public abstract class UIBase : MonoBehaviour
     {
         private enum LifecycleState
@@ -28,15 +23,8 @@ namespace ZFrameWork
         public bool IsShown => _state == LifecycleState.Shown;
         public string Key => _key;
 
-        /// <summary>
-        /// 设置 Controller 的基类函数。ViewModel 与 Controller 是业务自己的普通类，基类不持有它们；
-        /// 子类选择性重写本函数，做自己的类型化登记。
-        /// 约定：View 在 OnOpen 中创建 ViewModel 与 Controller，完成 View->ViewModel 绑定后
-        /// 将 ViewModel 注入 Controller；界面关闭时的解绑与回收由子类在 OnClose 中自行处理。
-        /// </summary>
         protected virtual void SetController() { }
 
-        /// <summary>子类重写此方法创建自己的资源组，返回空则使用管理器下发的工厂。</summary>
         protected virtual IResourceGroup InitializeResourceGroup() => null;
 
         protected virtual void OnOpen()

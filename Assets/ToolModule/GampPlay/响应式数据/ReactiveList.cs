@@ -3,7 +3,6 @@ using System.Collections.Generic;
 
 namespace ZFrameWork
 {
-    /// <summary>在内容变化后向订阅者传播当前只读列表。</summary>
     public sealed class ReactiveList<T>
     {
         private readonly List<T> _items;

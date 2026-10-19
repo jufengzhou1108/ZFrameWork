@@ -6,11 +6,6 @@ using UnityEngine.UI;
 
 namespace ZFrameWork
 {
-    /// <summary>
-    /// UI 根节点，全局唯一且不随场景切换销毁。
-    /// Awake 时按 UIManagerConfig 的层级配置创建各层 Canvas 与管理器，并兜底创建 EventSystem。
-    /// 资源组统一由 ResourceGroupFactory 提供。
-    /// </summary>
     public sealed class UIRoot : SingletonAutoMono<UIRoot>
     {
         private readonly List<UIManager> _managers = new();
@@ -21,7 +16,6 @@ namespace ZFrameWork
             CreateManagers();
         }
 
-        /// <summary>场景切换时由场景管理模块显式调用，自上而下清理各层界面。</summary>
         public void CleanupForSceneSwitch()
         {
             for (int i = _managers.Count - 1; i >= 0; i--)

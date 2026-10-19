@@ -6,21 +6,11 @@ using Object = UnityEngine.Object;
 
 namespace ZFrameWork
 {
-    /// <summary>
-    /// 单例 UI 栈式管理器。链表维护界面栈（尾部为栈顶），
-    /// UINode 作为同步代表处理异步乱序与重复请求。
-    /// 语义：
-    /// Open  —— 入栈并异步加载，保持隐藏；
-    /// Show  —— 栈中已有则出栈到该界面再显示，没有则先 Open 后 Show；
-    /// Hide  —— 仅隐藏界面，不动栈；
-    /// Close —— 栈顶则移除并显示上一个，非栈顶则从中间移除且不打乱顺序。
-    /// </summary>
     public sealed class SingletonUIManager : UIManager<SingletonUIManager>
     {
         private readonly LinkedList<UINode> _stack = new();
         private readonly Dictionary<Type, UINode> _nodes = new();
 
-        /// <summary>打开界面：入栈并异步加载，加载完成前不显示。已在栈中时仅对齐目标状态为隐藏。</summary>
         public bool Open(Type viewType)
         {
             if (!EnsureAlive())
@@ -32,13 +22,6 @@ namespace ZFrameWork
 
         public bool Open<TView>() where TView : UIBase => Open(typeof(TView));
 
-        /// <summary>
-        /// 设置界面的目标状态，节点有无由内部统一处理：
-        /// 已存在则对齐目标与可见性（重复请求去重，不重复加载）；
-        /// 不存在则创建节点并入栈——目标先于加载触发设置，
-        /// 保证加载同步完成时回调读到的目标即最终目标。
-        /// </summary>
-        /// <summary>对齐已存在节点的目标与可见性。节点不存在返回 false，无副作用。</summary>
         private bool TryAlignNode(Type viewType, bool targetVisible)
         {
             if (!_nodes.TryGetValue(viewType, out UINode existing))
@@ -70,7 +53,6 @@ namespace ZFrameWork
             node.LoadTask = LoadNodeAsync(node);
         }
 
-        /// <summary>显示界面：栈中已有则出栈到该界面，没有则创建节点（目标即显示）。</summary>
         public bool Show(Type viewType)
         {
             if (!EnsureAlive())
@@ -96,7 +78,6 @@ namespace ZFrameWork
 
         public bool Show<TView>() where TView : UIBase => Show(typeof(TView));
 
-        /// <summary>隐藏界面：仅对齐目标为隐藏，栈结构不变。界面未打开时忽略，不创建节点。</summary>
         public void Hide(Type viewType)
         {
             if (!EnsureAlive())
@@ -107,7 +88,6 @@ namespace ZFrameWork
 
         public void Hide<TView>() where TView : UIBase => Hide(typeof(TView));
 
-        /// <summary>关闭界面：栈顶则移除并显示上一个界面，非栈顶则从中间移除。</summary>
         public void Close(Type viewType)
         {
             if (!EnsureAlive())
@@ -136,7 +116,6 @@ namespace ZFrameWork
 
         public void Close<TView>() where TView : UIBase => Close(typeof(TView));
 
-        /// <summary>关闭所有界面，清空栈。</summary>
         public void Clear()
         {
             if (!EnsureAlive())
@@ -245,7 +224,6 @@ namespace ZFrameWork
             node.Path = null;
         }
 
-        /// <summary>界面切换时清理弹窗层，在触发切换的操作一开始调用。</summary>
         private static void ClearPopupsForSwitch()
         {
             PopupManager.Instance?.Clear();

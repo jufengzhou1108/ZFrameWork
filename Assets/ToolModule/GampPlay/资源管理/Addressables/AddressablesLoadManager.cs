@@ -7,18 +7,11 @@ using UnityEngine.ResourceManagement.AsyncOperations;
 
 namespace ZFrameWork
 {
-    /// <summary>
-    /// Addressables 资源加载管理器。
-    /// Addressables 只负责一次实际加载和最终释放，业务引用计数由本管理器维护。
-    /// </summary>
     public sealed class AddressablesLoadManager
     {
         private readonly Dictionary<string, ResourceEntry> _entries =
             new Dictionary<string, ResourceEntry>();
 
-        /// <summary>
-        /// 同步加载资源。path 用于 Addressables 查找，key 用于资源后续定位。
-        /// </summary>
         public T Load<T>(string path, string key) where T : UnityEngine.Object
         {
             if (!ValidateArguments<T>(path, key, out string managedKey))
@@ -53,9 +46,6 @@ namespace ZFrameWork
             }
         }
 
-        /// <summary>
-        /// 异步加载资源。加载失败、路径不存在或加载期间资源被释放时回调参数为 null。
-        /// </summary>
         public async Task<T> LoadAsync<T>(string path, string key) where T : UnityEngine.Object
         {
             if (!ValidateArguments<T>(path, key, out string managedKey))
@@ -111,7 +101,6 @@ namespace ZFrameWork
             }
         }
 
-        /// <summary>释放所有资源。正在加载的资源会在加载完成后立即释放。</summary>
         public void ReleaseAll()
         {
             List<string> keys = ListPool<string>.Get();
@@ -130,9 +119,6 @@ namespace ZFrameWork
             ListPool<string>.Release(keys);
         }
 
-        /// <summary>
-        /// 生成管理器内部使用的 key。调用方只需要提供原始字符串。
-        /// </summary>
         internal string BuildKey<T>(string key)
         {
             if (string.IsNullOrEmpty(key))
@@ -145,7 +131,6 @@ namespace ZFrameWork
             return managedKey;
         }
 
-        /// <summary>获取已完成加载的资源，不增加引用计数。</summary>
         internal T GetLoaded<T>(string managedKey) where T : UnityEngine.Object
         {
             if (string.IsNullOrEmpty(managedKey) ||
@@ -158,10 +143,6 @@ namespace ZFrameWork
             return entry.Asset as T;
         }
 
-        /// <summary>
-        /// 等待组内已经登记的加载完成，不增加管理器引用计数。
-        /// 资源组用此方法处理同一组内的并发重复访问。
-        /// </summary>
         internal T WaitForLoaded<T>(string managedKey) where T : UnityEngine.Object
         {
             if (string.IsNullOrEmpty(managedKey) ||
@@ -187,7 +168,6 @@ namespace ZFrameWork
             return entry.Asset as T;
         }
 
-        /// <summary>等待组内已经登记的加载完成，不增加管理器引用计数。</summary>
         internal async Task<T> WaitForLoadedAsync<T>(string managedKey) where T : UnityEngine.Object
         {
             if (string.IsNullOrEmpty(managedKey) ||
@@ -210,7 +190,6 @@ namespace ZFrameWork
             return entry.Asset as T;
         }
 
-        /// <summary>按管理器内部 key 释放一个引用。</summary>
         internal void ReleaseManagedKey(string managedKey)
         {
             if (string.IsNullOrEmpty(managedKey) ||
@@ -232,7 +211,6 @@ namespace ZFrameWork
             ReleaseEntry(entry);
         }
 
-        /// <summary>按管理器内部 key 列表释放引用。</summary>
         internal void ReleaseManagedKeys(IList<string> managedKeys)
         {
             if (managedKeys == null)
