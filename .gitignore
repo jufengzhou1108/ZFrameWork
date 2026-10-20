@@ -59,3 +59,8 @@ sysinfo.txt
 crashlytics-build.properties
 
 /UserSettings
+
+# AI Play-mode tests
+/Assets/Test/
+/Assets/Test.meta
+!/Assets/Test/.gitkeep
