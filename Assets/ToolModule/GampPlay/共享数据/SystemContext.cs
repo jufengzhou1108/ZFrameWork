@@ -3,7 +3,9 @@ using System.Collections.Generic;
 
 namespace ZFrameWork
 {
-    public sealed class ShareContainer
+    // 系统上下文：系统在组合阶段把自己的服务登记进来，内部按类型自取。
+    // 只放服务和查询接口，不放实体和业务数据；上下文归创建它的系统所有，生命周期跟系统走。
+    public sealed class SystemContext
     {
         private readonly Dictionary<Type, object> _items = new();
 
@@ -43,7 +45,7 @@ namespace ZFrameWork
 
         public T Get<T>() where T : class
         {
-            return (T)Get(typeof(T));
+            return Get(typeof(T)) as T;
         }
 
         public object Get(Type key)
