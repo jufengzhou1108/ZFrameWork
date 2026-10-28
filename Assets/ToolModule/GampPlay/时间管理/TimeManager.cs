@@ -10,11 +10,13 @@ public class TimeManager : Singleton<TimeManager>
 
     public void Pause()
     {
+        timer.PauseAll();
         Time.timeScale = 0;
     }
 
     public void Play()
     {
+        timer.ResumeAll();
         Time.timeScale = 1;
     }
 

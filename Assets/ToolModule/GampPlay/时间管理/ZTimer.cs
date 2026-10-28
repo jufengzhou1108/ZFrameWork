@@ -31,6 +31,10 @@ public class ZTimer
 
         isInitialized = true;
         stopwatch.Restart();
+        if (isGlobalPaused)
+        {
+            stopwatch.Stop();
+        }
         loopCts = new CancellationTokenSource();
         MainLoop(loopCts.Token).Forget();
     }
